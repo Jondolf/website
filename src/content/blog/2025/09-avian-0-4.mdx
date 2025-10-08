@@ -1,0 +1,1037 @@
+---
+id: 9
+title: "Avian Physics 0.4"
+description: "Massive performance improvements, and better force and joint APIs"
+createdAt: 2025-10-06
+tags:
+  - "Physics"
+  - "Simulation"
+  - "Rust"
+  - "Bevy"
+thumbnail: "@assets/avian_0_3.png"
+thumbnailOptimization: true
+---
+import ReleaseNoteMetadata from '@components/ReleaseNoteMetadata.astro';
+import Callout from "@components/Callout.astro"
+
+export const AVIAN_URL = 'https://github.com/Jondolf/avian';
+
+**Avian Physics 0.4** has been released! 🪶
+
+[**Avian**](https://github.com/Jondolf/avian) is an ECS-based 2D and 3D physics engine for [Bevy](https://bevyengine.org/),
+a refreshingly simple data-driven game engine built in Rust. Avian prioritizes ergonomics and modularity,
+with a focus on providing a native ECS-driven user experience.
+
+Check out the [GitHub repository](https://github.com/Jondolf/avian) and the [introductory post](https://joonaa.dev/blog/06/avian-0-1) for more details.
+
+## Highlights
+
+**Avian 0.4** is another huge release, with several new features, quality-of-life improvements, and important bug fixes. Highlights include:
+
+- **Massive performance improvements**: Avian is over ??x as fast for contact-heavy scenes, with much better scaling for multi-core hardware.
+	- **Solver bodies**: The solver stores bodies in a much more efficient format optimized for cache locality and future wide SIMD support.
+	- **Graph coloring**: The constraint solver is now multi-threaded with graph coloring.
+	- **Simulation islands**: Islands are used for a much improved sleeping and waking system, massively reducing overhead for large game worlds with many resting bodies.
+- **Force overhaul**: The force and impulse APIs have been redesigned from the ground up, providing a much more capable and intuitive interface.
+- **Joint API improvements**: Joints now support full reference frames (anchor + basis), and have new `JointDamping` and `JointForces` components.
+- **Contact API improvements**: Contact data now provides access to world-space points, normal speeds, and more accurate contact impulses.
+- **Bevy 0.17 support**: Avian has been updated to the latest version of Bevy, and has changed its collision event types and system set naming to match.
+- **Benchmarking CLI**: Avian has a new CLI tool for benchmarking various scenes and profiling multi-threaded scaling.
+
+The migration guide and a more complete changelog can be found on [GitHub](https://github.com/Jondolf/avian/releases/tag/v0.3.0).
+
+## Performance Improvements
+
+**Avian 0.4** is over **??x** as fast as Avian 0.3, with much better scaling for multi-core hardware.
+
+ASIDE: How does this compare to bevy_rapier?
+
+Getting to this point involved several changes and improvements to the solver, the largest of which are described below.
+
+### Solver Bodies
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[735]} repo={AVIAN_URL} />
+
+In past releases, our solver was highly bottlenecked by expensive ECS queries and sub-optimal cache performance.
+Each constraint used a *horribly* inefficient `RigidBodyQuery` for the involved bodies, fetching 21 different properties/components,
+many of which are optional. This resulted in a *ton* of overhead in a very hot loop.
+
+<details>
+    <summary>For the curious: the `RigidBodyQuery` type in Avian 0.3</summary>
+
+Uh... Yikes!
+
+```rust
+#[derive(QueryData)]
+#[query_data(mutable)]
+pub struct RigidBodyQuery {
+    pub entity: Entity,
+    pub rb: Ref<'static, RigidBody>,
+    pub position: &'static mut Position,
+    pub rotation: &'static mut Rotation,
+    pub previous_rotation: &'static mut PreviousRotation,
+    pub accumulated_translation: &'static mut AccumulatedTranslation,
+    pub linear_velocity: &'static mut LinearVelocity,
+    pub(crate) pre_solve_linear_velocity: &'static mut PreSolveLinearVelocity,
+    pub angular_velocity: &'static mut AngularVelocity,
+    pub(crate) pre_solve_angular_velocity: &'static mut PreSolveAngularVelocity,
+    pub mass: &'static mut ComputedMass,
+    pub angular_inertia: &'static mut ComputedAngularInertia,
+    #[cfg(feature = "3d")]
+    pub global_angular_inertia: &'static mut GlobalAngularInertia,
+    pub center_of_mass: &'static mut ComputedCenterOfMass,
+    pub friction: Option<&'static Friction>,
+    pub restitution: Option<&'static Restitution>,
+    pub locked_axes: Option<&'static LockedAxes>,
+    pub dominance: Option<&'static Dominance>,
+    pub time_sleeping: Option<&'static mut TimeSleeping>,
+    pub is_sleeping: Has<Sleeping>,
+    pub is_sensor: Has<Sensor>,
+}
+```
+
+</details>
+
+**Avian 0.4** refactors the solver internals to use dedicated `SolverBody` and `SolverBodyInertia` types
+optimized for memory locality and performance. They are initialized with body data before the solver,
+and the results are written back after the solver. In 2D, the types currently look like this:
+
+```rust
+// This representation is inspired by b2BodyState in Box2D v3.
+// 32 bytes in 2D, 56 bytes in 3D
+#[cfg(feature = "2d")]
+pub struct SolverBody {
+    pub linear_velocity: Vec2,  // 8 bytes
+    pub angular_velocity: f32,  // 4 bytes
+    pub delta_position: Vec2,   // 8 bytes
+    pub delta_rotation: Rot2,   // 8 bytes
+    pub flags: SolverBodyFlags, // 4 bytes
+}
+
+// This representation is my own current design.
+// 16 bytes in 2D, 32 bytes in 3D
+#[cfg(feature = "2d")]
+pub struct SolverBodyInertia {
+    // Includes locked axes
+    effective_inv_mass: Vec2,   // 8 bytes
+    effective_inv_inertia: f32, // 4 bytes
+    dominance: i16,             // 2 bytes
+    flags: InertiaFlags,        // 2 bytes
+}
+```
+
+Only awake dynamic bodies and kinematic bodies have an associated solver body. Static bodies and sleeping dynamic bodies
+do not move, so they instead use a "dummy state" with `SolverBody::default()`. However, this raises a problem:
+if the solver doesn't have access to the position or rotation of static bodies, how can we compute constraint anchors?
+There are two options:
+
+- **Option 1**: Use delta positions and rotations. This requires preparing base anchors and other necessary positional data
+  in world space, and computing the updated anchors during substeps.
+- **Option 2**: Use full positions and rotations. This requires storing anchors in world space for static bodies and sleeping bodies,
+  and in local space for dynamic bodies.
+
+Avian uses **Option 1**, because:
+
+- Using delta positions reduces round-off error when bodies are far from the origin.
+- Mixing world space and local space values depending on the body type would be quite confusing and error-prone, and would possibly require more branching.
+
+This required some refactoring for constraints, namely to prepare the base rotational data and to change some more logic to work in terms of deltas.
+
+The results after switching to solver bodies are quite remarkable. In the `pyramid_2d` example, using a base of 100 boxes,
+the results look like the following with 6 substeps and the `parallel` feature enabled.
+
+- **Left**: Old, no solver bodies.
+- **Middle**: Solver bodies stored in a `SolverBodies` resource, mapping entities to them with a `SolverBodyIndex` component.
+- **Right**: Solver bodies stored directly on the entities with a `SolverBody` component.
+
+![Performance comparison](https://github.com/user-attachments/assets/988e775f-82e8-425e-88b3-9e6cf9a88601)
+
+That is nearly a **3x** performance improvement in this collision-heavy scene. Crazy!
+
+### Parallel Solver With Graph Coloring
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[771]} repo={AVIAN_URL} />
+
+Adding solver bodies was a massive performance improvement. However, the constraint solver was still entirely single-threaded,
+which imposed a fundamental limitation on how the simulation scales on multi-core hardware.
+
+Parallelizing the solver is a non-trivial problem. Most physics engines, including Avian, use a *[Gauss-Seidel](https://en.wikipedia.org/wiki/Gauss%E2%80%93Seidel_method)*
+solver, which in practice means that constraints are solved sequentially, applying impulses to the bodies in a serial manner.
+To parallelize such a solver, we need to identify sets of constraints that do not access the same bodies to avoid race conditions.
+
+Roughly speaking, there are two or three common approaches to achieve this:
+
+1. **Simulation islands**: Bodies are grouped into graph-like "islands" based on their constraints.
+   Islands are disjoint, so they can be simulated independently and in parallel.
+2. **Graph coloring**: Constraints are assigned to "colors" such that no adjacent constraints share the same color.
+   This ensures that each body can only appear once in each color, and all constraints within a given color can be solved in parallel.
+3. **Hybrid**: Islands are used as a coarse parallelization unit, and large islands can be further split with some algorithm similar to graph coloring.
+
+Option 1 is fairly simple, but breaks down with large islands, as all constraints within a given island must still be solved serially.
+Option 2 is theoretically very effective, but the global graph coloring step itself can be costly.
+Option 3 is kind of a mix of both, only using graph coloring for large islands that need it.
+
+**Avian 0.4** implements a parallel constraint solver with [graph coloring](https://en.wikipedia.org/wiki/Graph_coloring) (option 2).
+To minimize overhead, the coloring is persisted across time steps, and updated incrementally using a simple greedy algorithm.
+This makes global graph coloring feasible even for huge worlds with tens of thousands of contacts.
+
+You can see it in action below. Each contact constraint has one or more contact points with the same color.
+In this scene, there are four colors, and if you look at for example orange, you can see that it only touches a box once per contact constraint.
+This is the secret sauce that allows solving multiple constraints simultaneously without race conditions.
+
+IMAGE
+
+Scaling to a larger scene, it looks like this:
+
+IMAGE
+
+The next section describes the implementation. If you want to skip ahead, the performance results are shown in the [Results](#results) section.
+
+#### Implementation
+
+The graph coloring algorithm is based on [Box2D](https://box2d.org/) and Erin Catto's excellent *[SIMD Matters](https://box2d.org/posts/2024/08/simd-matters/)*
+article, with the difference that Avian supports more than one manifold per contact pair, which means that a single contact pair's manifolds
+can be split across several colors.
+
+Firstly, the `ConstraintGraph` and `GraphColor` types look like this:
+
+```rust
+pub struct ConstraintGraph {
+    pub colors: Vec<GraphColor>,
+}
+
+pub struct GraphColor {
+    pub body_set: BitVec,
+    pub manifold_handles: Vec<ContactManifoldHandle>,
+    pub contact_constraints: Vec<ContactConstraint>,
+    // TODO: Joints do not yet use graph coloring
+}
+```
+
+- `body_set` stores a bit set where each bit corresponds to an `Entity` index.
+- `manifold_handles` stores the `ContactId` and index of each `ContactManifold` in this color.
+- `contact_constraints` stores all contact constraints that are a part of this color.
+
+When a contact manifold is added to the constraint graph, the constraint is assigned to the first color where the bit set
+does not have either body's bit set to `1`. Once the constraint has been assigned to a color, the body bits are set to `1`.
+This is a very fast operation.
+
+```rust
+impl ConstraintGraph {
+    pub fn push_manifold(&mut self, contact: &mut ContactEdge) {
+        // Initialize the color index to a serial "overflow" color,
+        // in case no free color is found.
+        let mut color_index = COLOR_OVERFLOW_INDEX;
+
+		// Find the first free color.
+		for i in 0..GRAPH_COLOR_COUNT {
+			let color = &mut self.colors[i];
+			
+			if color.body_set.get(contact.body1) || color.body_set.get(contact.body2) {
+			    // Try the next color.
+				continue;
+			}
+
+			// Free color found! Assign the bodies to it.
+			color.body_set.set_and_grow(contact.body1);
+			color.body_set.set_and_grow(contact.body2);
+			color_index = i;
+			break;
+		}
+
+        // Map the actual contact to the color (omitted)
+    }
+}
+```
+
+<details>
+    <summary>Handling static bodies</summary>
+
+The actual implementation needs to consider static bodies separately. They do not need to be added to the graph,
+as they are not mutably accessed during the solver. Additionally, it is good to solve static contacts last to give them
+higher priority in the solver. The algorithm ends up looking roughly like this:
+
+```rust
+impl ConstraintGraph {
+    pub fn push_manifold(&mut self, contact_edge: &mut ContactEdge) {
+        // Get whether the bodies are static (omitted)
+        
+        // Initialize the color index to a serial "overflow" color,
+        // in case no free color is found.
+        let mut color_index = COLOR_OVERFLOW_INDEX;
+
+        if !is_static1 && !is_static2 {
+            // Constraints involving only non-static bodies cannot be in colors reserved
+            // for constraints involving static bodies. This helps reduce tunneling through
+            // static geometry by solving static contacts last.
+            for i in 0..DYNAMIC_COLOR_COUNT {
+                let color = &mut self.colors[i];
+                
+                if color.body_set.get(contact.body1) || color.body_set.get(contact.body2) {
+                    continue;
+                }
+
+                color.body_set.set_and_grow(contact.body1);
+                color.body_set.set_and_grow(contact.body2);
+                color_index = i;
+                break;
+            }
+        } else if !is_static1 {
+            // Build static colors from the end to give them higher priority.
+            for i in (1..COLOR_OVERFLOW_INDEX).rev() {
+                let color = &mut self.colors[i];
+                
+                if color.body_set.get(contact.body1) {
+                    continue;
+                }
+
+                color.body_set.set_and_grow(contact.body1);
+                color_index = i;
+                break;
+            }
+        } else if !is_static2 {
+            // Build static colors from the end to give them higher priority.
+            for i in (1..COLOR_OVERFLOW_INDEX).rev() {
+                let color = &mut self.colors[i];
+                
+                if color.body_set.get(contact.body2) {
+                    continue;
+                }
+
+                color.body_set.set_and_grow(contact.body2);
+                color_index = i;
+                break;
+            }
+        }
+
+        // Map the actual contact to the color (omitted)
+    }
+}
+```
+
+</details>
+
+Similarly, when a contact manifold is removed from the constraint graph, the corresponding bits are cleared in the bit set.
+
+```rust
+impl ConstraintGraph {
+    pub fn pop_manifold(&mut self, contact: &mut ContactEdge) -> Option<ContactConstraintHandle> {
+        // Pop the constraint handle mapping the contact to this color.
+        let constraint_handle = contact.constraint_handles.pop()?;
+
+        // Get the constraint's color and the index within that color.
+        let color_index = constraint_handle.color_index;
+        let local_index = constraint_handle.local_index;
+        let color = &mut self.colors[color_index];
+
+        if color_index != COLOR_OVERFLOW_INDEX {
+            // Remove the bodies from the color's body set.
+            color.body_set.unset(contact.body1);
+            color.body_set.unset(contact.body2);
+        }
+
+        // Remove the manifold handle from the color (omitted)
+        
+        // Return the constraint handle that was removed.
+        Some(contact_constraint_handle)
+    }
+}
+```
+
+<Callout variant="note">
+    The above examples omit some implementation details and are slightly simplified for demonstration purposes.
+    The actual implementation can be found on [GitHub](https://github.com/Jondolf/avian/blob/main/src/dynamics/solver/constraint_graph.rs).
+</Callout>
+
+Now, the solver can simply iterate through each color, and solve the constraints in a given color in parallel.
+
+Under the hood, implementing the constraint graph and graph coloring involved a lot more changes:
+
+- The `ContactGraph` now stores `ContactEdge`s ("cold" connectivity data) and `ContactPair`s (the actual contact data) separately
+- The `ContactGraph` now uses `IdPool`s to keep `ContactEdge` indices stable when contacts are added or removed
+- Active and sleeping `ContactPair`s are now stored in separate lists, allowing the narrow phase to only iterate over active contacts
+- `ContactConstraint` preparation is now done in the solver, not in the narrow phase
+- A lot more :)
+
+#### Results
+
+Running the Large Pyramid 2D benchmark before and after implementing graph coloring, on a Core i7-13700F, we get the following results:
+
+IMAGE
+
+A more detailed breakdown can be seen below. Before graph coloring:
+
+IMAGE
+
+After graph coloring:
+
+IMAGE
+
+At the top of the profile you can see the contacts being assigned to graph colors. You can see how the narrow phase
+is now significantly faster, and more importantly the solver is over **3x as fast**, resulting in nearly **2x total performance**.
+This difference tends to grow the more contacts there are.
+
+This is just the start, as there is a *lot* more that can be done to further optimize things:
+
+- The threading should be optimized further to minimize latency and effectively go as wide as possible, as fast as possible.
+  See the [*Improved Multi-Threading*](#improved-multi-threading) section at the end.
+- Graph coloring is not just for multi-threading; it also enables AoSoA-style SIMD optimizations.
+  See the [*Wide SIMD*](#wide-simd) section at the end.
+- Joints do not use graph coloring just yet, but it should be relatively straightforward to add support for it soon.
+
+Expect more improvements in the future!
+
+### Simulation Islands
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[809]} repo={AVIAN_URL} />
+
+In the [previous section](#parallel-solver-with-graph-coloring), simulation islands were mentioned as one approach for solver parallelization. However, they also have another, arguably even more important function: sleeping and waking!
+
+Sleeping is a low-cost state for resting dynamic bodies, and it is crucial for reducing CPU overhead for large game worlds. Up until now, Avian has used basic per-body sleeping that only allows sleeping for dynamic bodies that are not in contact with each other and not connected via joints. This means that object piles and joints are never allowed to sleep.
+
+The standard solution to this problem is [_simulation islands_](https://box2d.org/posts/2023/10/simulation-islands/). Bodies that are touching or connected by a joint belong to the same island, and can only sleep if the whole island can sleep. Conversely, if any dynamic body in an island is woken up, the whole island is woken up.
+
+<img alt="Simulation islands" src="/blog-assets/avian-0-4/simulation_islands.png" />
+
+**Avian 0.4** implements *persistent simulation islands* for sleeping and waking. Islands are persisted across time steps, merged when constraints are added between different islands, and split heuristically in a deferred manner.
+
+This can be seen in action in the below video, displaying the combined bounds of each body in each island as a red bounding box. When islands are marked as sleeping, the outline becomes darker.
+
+<video controls>
+  <source src="/blog-assets/avian-0-4/simulation_islands.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+#### Implementation
+
+The island implementation is primarily based on Erin Catto's [*Simulation Islands*](https://box2d.org/posts/2023/10/simulation-islands/) article and [Box2D](https://box2d.org/). In short:
+
+- Each dynamic body starts with its own `PhysicsIsland`, stored in the `PhysicsIslands` resource.
+- Bodies, contacts, and joints form island linked lists with an `IslandNode` stored in each `BodyIslandNode` component, `ContactEdge`, and `JointEdge`.
+- When a constraint between two dynamic bodies is created, their islands are merged with a serial union-find algorithm.
+- When a constraint is removed, `PhysicsIsland::constraints_removed` is incremented.
+- At each time step, the sleepiest island with one or more constraints removed is chosen as a `split_candidate`, and split using DFS. Splitting is expensive, but it can safely be deferred and done heuristically like this.
+
+For more details, see [#809](https://github.com/Jondolf/avian/pull/809).
+
+The persistent approach is [extremely fast](https://box2d.org/posts/2023/10/simulation-islands/#results), as shown in Erin's article. Of course, a downside is that it needs to persist state, which can complicate networking use cases. In the future, it could be worth also supporting a stateless alternative that builds islands from scratch for each time step using a depth-first search or union-find algorithm. In particular, Jolt uses a [parallel union find](https://gdcvault.com/play/1027560/Architecting-Jolt-Physics-for-Horizon) algorithm that could be a solid alternative.
+
+## Force Overhaul
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[770]} repo={AVIAN_URL} />
+
+In past releases, the force APIs `ExternalForce`, `ExternalTorque`, `ExternalImpulse`, and `ExternalAngularImpulse` were quite limited and cumbersome to use. Everything could be "persistent" or "not persistent", impulses were not applied immediately but rather during the simulation step, and local forces were not directly supported. Additionally, there was a lot of wasted memory, and overall inefficiencies.
+
+**Avian 0.4** overhauls the force APIs from the ground up, replacing the old components with two types of new APIs:
+
+1. Components for constant forces
+2. A `Forces` helper `QueryData`
+
+### Constant Forces
+
+Constant forces and torques that persist across time steps can be applied using the following components:
+
+- `ConstantForce`: Applies a constant force in world space.
+- `ConstantTorque`: Applies a constant torque in world space.
+- `ConstantLinearAcceleration`: Applies a constant linear acceleration in world space.
+- `ConstantAngularAcceleration`: Applies a constant angular acceleration in world space.
+
+They also have local space equivalents:
+
+- `ConstantLocalForce`: Applies a constant force in local space.
+- `ConstantLocalTorque`: Applies a constant torque in local space.
+- `ConstantLocalLinearAcceleration`: Applies a constant linear acceleration in local space.
+- `ConstantLocalAngularAcceleration`: Applies a constant angular acceleration in local space.
+
+These components are useful for simulating continuously applied forces that are expected to remain the same across time steps, such as per-body gravity or force fields.
+
+```rust
+commands.spawn((
+    RigidBody::Dynamic,
+    Collider::capsule(0.5, 1.0),
+    // Apply a constant force of 10 N in the positive Y direction.
+    ConstantForce::new(0.0, 10.0, 0.0),
+));
+```
+
+The forces are only constant in the sense that they persist across time steps. They can still be modified in systems like normal.
+
+### `Forces` Helper
+
+It is common to apply many individual forces and impulses to dynamic rigid bodies, and to clear them afterwards. This can be done using the `Forces` helper `QueryData`.
+
+To use `Forces`, add it to a `Query` (without `&` or `&mut`), and use the associated methods to apply forces, impulses, and accelerations to the rigid bodies.
+
+```rust
+fn apply_forces(mut query: Query<Forces>) {
+    for mut forces in &mut query {
+        // Apply a force of 10 N in the positive Y direction to the entity.
+        forces.apply_force(Vec3::new(0.0, 10.0, 0.0));
+    }
+}
+```
+
+The force is applied continuously during the physics step, and cleared automatically after the step is complete.
+
+`Forces` can also apply forces and impulses at a specific point in the world. If the point is not aligned with the global center of mass, it will also apply a torque to the body.
+
+```rust
+// Apply an impulse at a specific point in the world.
+// Unlike forces, impulses are applied immediately to the velocity,
+forces.apply_linear_impulse_at_point(force, point);
+```
+
+As an example, you could implement radial gravity that pulls rigid bodies towards the world origin with a system like the following:
+
+```rust
+fn radial_gravity(mut query: Query<(Forces, &GlobalTransform)>) {
+    for (mut forces, global_transform) in &mut query {
+        // Compute the direction towards the center of the world.
+        let direction = -global_transform.translation().normalize_or_zero();
+        // Apply a linear acceleration of 9.81 m/s² towards the center of the world.
+        forces.apply_linear_acceleration(direction * 9.81);
+    }
+}
+```
+
+By default, applying forces to sleeping bodies will wake them up. To avoid this, call `non_waking` to get a non-waking instance of the force item.
+
+```rust
+// This does not wake up the body.
+forces.non_waking().apply_force(force);
+
+// This wakes up the body if it is sleeping.
+forces.apply_force(force);
+```
+
+## Joint API Improvements
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[799, 803]} repo={AVIAN_URL} />
+
+For a long time, Avian's joints have been in dire need of a rework. While the new joint solver is unfortunately still not ready, I wanted to address some of the bigger API problems and missing features in this release.
+
+**Avian 0.4** implements:
+
+- Reference frames (anchor + basis)
+- Controlling damping via a `JointDamping` component
+- Accessing joint forces via a `JointForces` component
+- Disabling collisions between jointed bodies via a `JointCollisionDisabled` component
+- Querying for joints between entities through a `JointGraph`
+- Decoupling joint APIs from solver internals, making custom joint solvers more viable
+- A *lot* of polish to both APIs and documentation
+
+Future work still includes the new joint solver, more joint types, and joint motors, to name a few. Still, progress has been made!
+
+The following sections cover the above improvements in more detail.
+
+### Reference Frames
+
+A *very* common problem that users have encountered with joints is that you can only configure the joint anchor's position, but not the relative orientation. For a `FixedJoint`, this meant that the orientations of the two bodies were fixed to be equal, and you could not attach them together at a 45 degree angle, for example.
+
+To address this, **Avian 0.4** adds support for full *joint frames*. To illustrate what this means, consider the following image:
+
+<img alt="A joint frame" src="/blog-assets/avian-0-4/joint_frame.svg" />
+
+Each joint has two reference frames formed by an "anchor" and "basis", one for each body. The anchor is the joint's attachment point relative to the center of the body, while the basis is the joint's base rotation relative to the orientation of the body. When these two reference frames are aligned in world space, such as in the illustration above, the translational and rotational offset between the bodies is considered to be zero.
+
+Simply put, joint frames allow configuring the base translational and rotational offset for each body connected by a joint. By default, the offsets are zero, but they can be modified to achieve desired joint configurations.
+
+In code, this is done with a `JointFrame` that contains a `JointAnchor` and `JointBasis`. They are enums with `Local` and `FromGlobal` variants, allowing the initialization of local frames using world-space values:
+
+```rust
+// Use a world-space anchor of (5, 2), and rotate the second body's local frame by 45 degrees.
+commands.spawn((
+    RevoluteJoint::new(body1, body2)
+        .with_anchor(Vec2::new(5.0, 2.0))
+        .with_local_basis2(Rot2::degrees(45.0))
+));
+```
+
+<Callout variant="note" title="Special Axes">
+    In many physics engines, specific axes are implicitly tied to certain constraints depending on the joint type. For example, the x-axis is commonly the de-facto slider axis for prismatic joints, and the local frames *must* be rotated to get other behavior. I was not a fan of this implicitness, especially as these standards vary across engines. Instead, I kept these axes configurable, for example using `PrismaticJoint::with_slider_axis`, while also keeping support for the additional basis orientation.
+</Callout>
+
+### Damping
+
+Previously, each joint type stored its own damping coefficients. However, the actual damping logic is not joint-specific, and not all joints need damping. Thus, it is now handled by a separate `JointDamping` component with `linear` and `angular` properties.
+
+```rust
+commands.spawn((
+    DistanceJoint::new(body1, body2),
+    JointDamping {
+        linear: 0.1,  // Linear damping
+        angular: 0.1, // Angular damping
+    },
+));
+```
+
+### Forces
+
+The details of joint forces are solver-specific. However, ultimately users want to read a force and torque vector. This has now been generalized as a `JointForces` component that the constraint solver writes to and users can read. It is *not* added automatically and must be added manually for the desired joint entities.
+
+```rust
+commands.spawn((
+    RevoluteJoint::new(body1, body2),
+    JointForces::new(),
+));
+```
+
+An example of where this may be useful is breaking joints when their forces or torques exceed some threshold:
+
+```rust
+fn break_joints(
+    mut commands: Commands,
+    query: Query<(Entity, &JointForces), Without<JointDisabled>>,
+) {
+    for (entity, joint_forces) in &query {
+        if joint_forces.force().length() > BREAK_THRESHOLD {
+            // Break the joint by adding the `JointDisabled` component.
+            // Alternatively, one could simply remove the joint component or despawn the entity.
+            commands.entity(entity).insert(JointDisabled);
+        }
+    }
+}
+```
+
+### Disabling Joint Collision
+
+A common requirement when using joints is to disable collisions between the attached bodies, for example a wheel and a car. Collision layers are typically not suitable for this, as you may still want a car to collide with the wheels of _other_ cars.
+
+In past releases, implementing the desired behavior properly required custom hooks, which is both inefficient and overly complicated for such a common scenario.
+
+**Avian 0.4** introduces a `JointCollisionDisabled` component for disabling collisions between bodies that are jointed together.
+
+```rust
+commands.spawn((
+    RevoluteJoint::new(body1, body2),
+    JointCollisionDisabled,
+));
+```
+
+### Joint Graph
+
+To implement `JointCollisionDisabled` and [simulation islands](#simulation-islands), it was necessary to have an efficient way to query for which bodies have joints between them. This naturally leads to a graph structure where bodies are nodes and the joints between them are edges.
+
+**Avian 0.4** adds a `JointGraph` resource for tracking how bodies are connected by joints. While it is primarily intended for internals, it can also be used as an API to query for whether two bodies are connected by a joint, or for querying all joints attached to a given body, without worrying about the *types* of joints involved.
+
+### Decoupling Solver Internals
+
+Especially after refactoring constraint logic for [solver bodies](#solver-bodies), the joint types stored a lot of data related to solver internals: Lagrange multipliers, center offsets from before the substepping loop, and more. This was not ideal. Such public APIs should not contain private internals, and it would also be good if these APIs could be reused even across *different* joint solvers, and were not inherently tied to our existing XPBD joint solver.
+
+**Avian 0.4** takes a big step towards a more decoupled design by moving solver-specific joint data into their own internal components like `RevoluteJointSolverData`, moving the joint APIs to a new `dynamics::joints` module, and extracting all XPBD logic into its own `dynamics::solver::xpbd` module with an `XpbdSolverPlugin`.
+
+All XPBD logic is now gated behind an `xpbd_joints` feature, which means that (1) you can disable XPBD if you're concerned about the [patenting](https://joonaa.dev/blog/06/avian-0-1#patent), and (2) it is now theoretically possible to implement your own custom solver for Avian's joints, while using the existing API. Nice!
+
+## 3D Friction Stability Fix
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[794]} repo={AVIAN_URL} />
+
+For a long time, Avian has had stability problems in 3D, especially with small shapes. Shapes with a small angular inertia drift and jitter on the ground even by themselves. A simple cube stack like the following with 10 cm cubes and the standard 9.81 m/s² gravity twists and just falls apart immediately.
+
+<video controls>
+  <source src="/blog-assets/avian-0-4/friction_before.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+As it turns out, this was a simple bug in the way tangent directions were computed for friction in the contact solver. In short, the "effective mass" for friction was computed using *old* tangents, but later substeps used *new* tangents while still using the original effective mass, which could produce wildly inaccurate impulses at low speeds where the tangents can change quickly. The fix was to instead just use the original tangents for the whole time step, not recomputing them each time.
+
+With this fixed, we get a *massive* stability improvement:
+
+<video controls>
+  <source src="/blog-assets/avian-0-4/friction_after.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+There is still a small wobble, but I believe this is largely due to the gravity being fairly high for such small objects, and 6 substeps isn't enough to keep it fully stable. With a lower gravity, it's perfectly stable.
+
+## Contact API Improvements
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[788, 792]} repo={AVIAN_URL} />
+
+Avian's contact APIs have historically had some quirks that make them difficult to use. **Avian 0.4** addresses some of these.
+
+### World-Space Points
+
+In past releases, each `ContactPoint` stored a `local_point1` and `local_point2`, the closest points between the surfaces of the two bodies in local space. However, users reading collision data typically only want a single point in world space to determine where the contact happened.
+
+**Avian 0.4** adds a `ContactPoint::point` property for the world-space contact point. This is effectively the midpoint between the closest points of the contact surfaces in world space. Additionally, the local contact points have been removed (for now) in favor of world-space `anchor1` and `anchor2` points relative to the center of mass of each body.
+
+<Callout variant="warning" title="Floating-Point Accuracy">
+    Because `ContactPoint::point` is in world space, it is subject to precision loss at large coordinates. It should primarily be used for debugging, or for gameplay purposes where high precision is not important.
+</Callout>
+
+### Contact Impulses
+
+The impulse applied along the normal at a contact point is stored in the `ContactPoint::normal_impulse` property. However, in previous releases, this did *not* actually represent the total impulse applied over the whole time step, as it was instead the "clamped accumulated normal impulse" from the last substep. This representation was needed for warm starting the contact solver, but it did not match user expectations.
+
+**Avian 0.4** changes `ContactPoint::normal_impulse` to be the total impulse applied across the time step. The old warm starting impulse is now stored as `ContactPoint::warm_start_normal_impulse`. APIs such as `ContactPair::total_normal_impulse` have also been updated accordingly, to use the total impulse.
+
+Additionally, each `ContactPoint` now exposes a `normal_speed` property for the relative velocity of the bodies along the normal. This can be thought of as an impact velocity: `-normal_speed` is equivalent to how fast the bodies are approaching each other at the contact point. This can be a useful alternative to `normal_impulse` for determining the "strength" of a contact in a way that is not dependent on mass or the time step.
+
+## Collider Constructor Caching
+
+<ReleaseNoteMetadata authors={['janhohenheim']} prs={[743]} repo={AVIAN_URL} />
+
+Generating colliders from meshes using `ColliderConstructor` or `ColliderConstructorHierarchy` can be expensive, especially when using convex decomposition. Currently, each collider is generated separately, but in practice, scenes tend to use many instances of the same meshes. Generating the same collider separately for each mesh instance can result in a lot of unnecessary work.
+
+**Avian 0.4** introduces caching for collider constructors. For each new mesh that needs a collider, the generated shape is added to a `ColliderCache` resource, and when a mesh with the same `AssetId` is encountered later, the shape is simply fetched from the cache rather than generating a new collider from scratch. This is enabled by default and requires no changes on the user's side.
+
+This can have a significant impact on scene loading times. Below, you can see how loading the [foxtrot](https://github.com/janhohenheim/foxtrot) scene used to take several seconds:
+
+<video controls>
+  <source src="/blog-assets/avian-0-4/collider_constructors_before.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+(Ignore the chair freaking out, that was an old bug that has since been fixed)
+
+Now, loading the map is near instantaneous!
+
+<video controls>
+  <source src="/blog-assets/avian-0-4/collider_constructors_after.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+(the first load is a bit more costly here, and also included shader compilation, which is unrelated to Avian)
+
+## Bevy 0.17 Support
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[815]} repo={AVIAN_URL} />
+
+**Avian 0.4** supports [Bevy 0.17](https://bevy.org/news/bevy-0-17/), and includes changes to match its new conventions and APIs.
+
+### Collision Events
+
+Bevy 0.17 introduced an [Event / Observer Overhaul](https://bevy.org/news/bevy-0-17/#event-observer-overhaul) that changed how events work in Bevy. Notably, the new `Message` trait is what used to be a buffered `Event`, and `Event` is now left exclusively for observer events. Additionally, targeted events use the `EntityEvent` trait.
+
+To adapt to these changes, **Avian 0.4** combines its buffered events and observer events under the `CollisionStart` and `CollisionEnd` events. They implement both `Message` *and* `Event`, so they can be consumed with both the `MessageReader` and observer APIs, depending on which one is a better fit for a given scenario. This also means that the buffered events, or "messages", now additionally store the entities of the bodies, not just the colliders.
+
+<details>
+    <summary>Collision event terminology</summary>
+
+The term "collision event" or "contact event" is *extremely* common across a variety of engines. With Bevy's recent naming changes, it begs the question of whether we should abandon this standard and start calling the `Message` version a "collision message".
+
+From my point of view, the answer is no. The difference is subtle, but instead of saying that the type *is a message*, we say that it is written *as a message*. The defining factor of the type is that it is fundamentally a "collision event", even if it can be sent as a message. See [cart's message](https://github.com/bevyengine/bevy/pull/20953#issuecomment-3276401449) on general naming guidelines for messages and events.
+</details>
+
+A collision event observer before and after:
+
+```rust
+// Before
+fn on_player_stepped_on_plate(event: Trigger<OnCollisionStart>, player_query: Query<&Player>) {
+    let pressure_plate = event.target();
+    let other_entity = event.collider;
+
+    if player_query.contains(other_entity) {
+        println!("Player {other_entity} stepped on pressure plate {pressure_plate}");
+    }
+}
+
+// After
+fn on_player_stepped_on_plate(event: On<CollisionStart>, player_query: Query<&Player>) {
+    let pressure_plate = event.collider1;
+    let other_entity = event.collider2;
+
+    if player_query.contains(other_entity) {
+        println!("Player {other_entity} stepped on pressure plate {pressure_plate}");
+    }
+}
+```
+
+A collision event reader system before and after:
+
+```rust
+// Before
+fn print_started_collisions(mut collision_reader: EventReader<CollisionStarted>) {
+    for CollisionStarted(collider1, collider2) in collision_reader.read() {
+        println!("{collider1} and {collider2} started colliding");
+    }
+}
+
+// After
+fn print_started_collisions(mut collision_reader: MessageReader<CollisionStart>) {
+    // Note: The event now also stores `body1` and `body2`
+    for event in collision_reader.read() {
+        println!("{} and {} started colliding", event.collider1, event.collider2);
+    }
+}
+```
+
+### System Sets
+
+Bevy 0.17 adopted a [consistent naming convention for system sets](https://bevy.org/news/bevy-0-17/#consistent-naming-conventions-for-system-sets) (I did this!). Where applicable, system sets should now be suffixed with `Systems`. Previously, Avian used the `Set` suffix, for example for `PhysicsSet`.
+
+**Avian 0.4** renames its system sets to follow the new `Systems` suffix convention. Notable renames include:
+
+- `PhysicsSet` → `PhysicsSystems`
+- `PhysicsStepSet` → `PhysicsStepSystems`
+- `SubstepSet` → `SubstepSystems`
+- `SubstepSolverSet` → `SubstepSolverSystems`
+- `SolverSet` → `SolverSystems`
+- `IntegrationSet` → `IntegrationSystems`
+- `BroadPhaseSet` → `BroadPhaseSystems`
+- `NarrowPhaseSet` → `NarrowPhaseSystems`
+- `SweptCcdSet` → `SweptCcdSystems`
+- `PhysicsTransformSet` → `PhysicsTransformSystems`
+
+### Collider Constructor Hierarchy Names
+
+Bevy 0.17 changed the way `Name` works for glTF mesh primitives ([migration guide](https://bevy.org/learn/migration-guides/0-16-to-0-17/#use-gltf-material-names-for-spawned-primitive-entities)). Instead of `MeshName.PrimitiveIndex`, it is now in the form of `MeshName.MaterialName`. This also means that APIs such as `ColliderConstructorHierarchy::with_constructor_for_name` have switched to this format.
+
+```rust
+ColliderConstructorHierarchy::new(ColliderConstructor::ConvexDecompositionFromMesh)
+    .with_density_for_name("armL_mesh.ferris_material", 3.0)
+    .with_density_for_name("armR_mesh.ferris_material", 3.0)
+```
+
+## Benchmarking CLI
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[753]} repo={AVIAN_URL} />
+
+With an increasing focus on performance and multi-threading, Avian needs better tooling for benchmarks. Version 0.3 added [physics diagnostics](http://joonaa.dev/blog/08/avian-0-3#physics-diagnostics), which are great for runtime profiling, but we are still missing a tool to simply run a suite of dedicated benchmarks that produce reliable, reproducible results in text form. Built-in Rust tooling like `cargo bench` and the [`criterion`](https://github.com/bheisler/criterion.rs) crate are not enough, as our needs are more specialized. We need tooling to:
+
+- run benchmarks that track the desired physics timers, not just total step times
+- run a benchmark with many different thread counts to profile multi-threaded scaling
+- run a benchmark with different SIMD targets (AVX, SIMD128, NEON, SSE2, scalar)
+- bonus: produce CSV files with the desired format to create plots for benchmark results
+
+**Avian 0.4** implements its own CLI tool for running 2D and 3D benchmarks. This is not a part of the crate itself, but can be found in the [GitHub repository](https://github.com/Jondolf/avian/tree/c678818b16faef9b6611e37d46cfc0d56b3d508b/benches).
+
+Currently, the CLI supports the following options:
+
+```text
+Options:
+  -n, --name <NAME>                The name or number of the benchmark to run. Leave empty to run all benchmarks
+  -t, --threads <THREADS>          A range for which thread counts to run the benchmarks with. Can be specified as `start..end` (exclusive), `start..=end` (inclusive), or `start` [default: 1..13]
+  -s, --steps <STEPS>              The number of steps to run for each benchmark [default: 300]
+  -r, --repeat <REPEAT>            The number of times to repeat each benchmark. The results will be averaged over these repetitions [default: 5]
+  -l, --list                       List all available benchmarks in a numbered list
+  -o, --output <OUTPUT>            The output directory where results are written in CSV format. Leave empty to disable output
+  -h, --help                       Print help
+  -V, --version                    Print version
+```
+
+An example of running the "Large Pyramid 2D" benchmark with 1-6 threads and 500 steps, repeated 5 times:
+
+```shell
+# Run with `benches` as the current working directory
+cargo run -- --name "Large Pyramid 2D" --threads 1..=6 --steps 500 --repeat 5
+```
+
+The output might look something like this:
+
+```text
+Running benchmark 'Large Pyramid 2D' with threads ranging from 1 to 6:
+| threads | avg time / step | min time / step |
+| ------- | --------------- | --------------- |
+|       1 |     12.29045 ms |     11.22260 ms |
+|       2 |     10.40321 ms |      9.27592 ms |
+|       3 |      9.65242 ms |      8.53754 ms |
+|       4 |      9.19108 ms |      8.15204 ms |
+|       5 |      9.03052 ms |      8.08754 ms |
+|       6 |      8.91510 ms |      7.87406 ms |
+```
+
+The CLI supports CSV output, producing files like the following:
+
+```text
+threads,step_ms
+1,12.290453
+2,10.403209
+3,9.652423
+4,9.191079
+5,9.030517
+6,8.915103
+```
+
+Creating plots (for example in Google Sheets or some other tool) is then very easy. You might have seen these earlier in this post!
+
+IMAGE
+
+In the future, when wide SIMD is used for the solver, we will also add different SIMD targets to the benchmarks. If we wanted to, we could also further automate plot creation by generating them directly as .png or .svg files in the CLI tool, but for now, they must be authored manually.
+
+## Voxel Shape
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[761]} repo={AVIAN_URL} />
+
+TODO
+
+## Other Changes
+
+- ...
+
+## What's Next?
+
+**Avian 0.4** is a massive step forward, but there is still a *lot* more to come.
+Here are some of the things I am looking to work on next!
+
+### Performance Improvements
+
+#### Wide SIMD
+
+Earlier, we described how **Avian 0.4** now uses [graph coloring](#parallel-solver-with-graph-coloring) for multi-threading in the constraint solver. However, multi-threading is not the only form of parallelization. Modern CPUs also support various [SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) instructions for performing the same operation on multiple pieces of data at the same time, which can lead to significant performance gains for both single-threaded and multi-threaded use cases.
+
+Leveraging SIMD properly is challenging, and requires the algorithm to be designed with vectorization in mind. While compilers can often perform auto-vectorization for appropriately formatted data, the best results can be achieved with manual vectorization. To give an idea of the sorts of performance gains we can get out of it, below are some [benchmark results](https://box2d.org/files/benchmark_results.html) for Box2D with various SIMD targets, as of August 2025:
+
+<img alt="Box2D large pyramid benchmark" src="/blog-assets/avian-0-4/box2d_large_pyramid.png" />
+
+Many libraries exist for so-called "portable SIMD", which aims to provide types such as `f32x4` with APIs that automatically choose the appropriate instructions for each SIMD target. Notably, Rust has `core::simd` on the nightly toolchain, while the `wide` crate provides some SIMD types on stable Rust.
+
+Ideally, we could have an API that supports both: `core::simd` on nightly, with a `wide` fallback for stable Rust. The `simba` crate provides this using separate wrapper types for `core::simd` and `wide`, alongside many traits, but I am looking for a more uniform API that more closely matches `core::simd::Simd`. This has no existing solution in the Rust ecosystem (that I have found), so I have started initial work on a prototype of my own. We'll see how it goes! 
+
+However, SIMD float types are not enough: we also need types for vectors, matrices, and quaternions. Avian and Bevy use the [Glam](https://docs.rs/glam/latest/glam/) crate for this, but it only has scalar versions such as `Vec3`, and no "wide" SIMD types like `Vec3x4`.
+
+To address this, I have started working on another crate called [`glam_wide`](https://github.com/Jondolf/glam_wide). It aims to provide wide SIMD versions of all Glam types, for when you need to go wide, whether that is for physics simulation, a software renderer, or audio processing. Right now, it uses the `wide` crate, but it may be ported to my portable SIMD crate if all goes well.
+
+Here's a sneak peak of what `glam_wide` and my WIP portable SIMD crate currently look like for a wide ray-sphere intersection algorithm:
+
+```rust
+fn ray_sphere_intersect(
+    ray_origin: Vec3x4,
+    ray_dir: Vec3x4,
+    sphere_origin: Vec3x4,
+    sphere_radius_squared: f32x4,
+) -> f32x4 {
+    let oc = ray_origin - sphere_origin;
+    let b = oc.dot(ray_dir);
+    let c = oc.length_squared() - sphere_radius_squared;
+    let discriminant = b * b - c;
+
+    let is_discriminant_positive = discriminant.simd_gt(f32x4::ZERO);
+    let discriminant_sqrt = discriminant.sqrt();
+
+    let t1 = -b - discriminant_sqrt;
+    let is_t1_valid = t1.simd_gt(f32x4::ZERO) & is_discriminant_positive;
+    
+    let t2 = -b + discriminant_sqrt;
+    let is_t2_valid = t2.simd_gt(f32x4::ZERO) & is_discriminant_positive;
+
+    let t = is_t2_valid.select(t2, f32x4::MAX);
+    let t = is_t1_valid.select(t1, t);
+    t
+}
+```
+
+`glam_wide` is not yet complete or ready for general use, but I am hoping to make the first release in the near future. Soon after, I am hoping to integrate it into Avian to further accelerate the contact solver. Stay tuned for more updates!
+
+#### Improved Multi-Threading
+
+In this release, we implemented [multi-threading for the contact solver using graph coloring](#parallel-solver-with-graph-coloring). However, multi-threading introduces its own overhead that can seriously hinder real-world performance, sometimes even performing *worse* than the single-threaded version.
+
+Thread pools like [rayon](https://github.com/rayon-rs/rayon) are *throughput*-oriented. They are great for parallelizing large computational workloads, but often struggle with *latency* and parallelizing across many smaller tasks. Physics solvers like Avian's on the other hand are remarkably latency-bound: for each time step, there are commonly 4-12 substeps, each of which go parallel over a number of constraints for each graph color (anywhere from 1 to 24 colors), for 3 different stages (warm start, solve with bias, solve without bias). This is anywhere from 12 to 864 parallel loops *per time step* (commonly though, it is closer to 40-100 parallel loops), and that's just for the contact solver.
+
+Luckily, there are also thread pools such as [`bevy_tasks`](https://docs.rs/bevy_tasks/latest/bevy_tasks/) and [Forte](https://github.com/NthTensor/Forte) that are *latency*-oriented. Avian 0.4 uses `bevy_tasks`, which works quite well for our purposes. However, while latency is fairly low, we need something that effectively goes *as wide as possible, as fast as possible*, CPU use be damned (not too much of a problem for short-lived tasks). In practice, this needs something like a spinning lockless thread pool. Dennis Gustafsson, the creator of Teardown, had an [excellent presentation](https://youtu.be/Kvsvd67XUKw) at BSC 2025 that explores this space and how they ended up parallelizing their solver.
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/Kvsvd67XUKw" title="Dennis Gustafsson - Parallelizing the physics solver - BSC 2025" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen class="yt-video"></iframe>
+
+@NthTensor has been developing [Forte](https://github.com/NthTensor/Forte) to replace Bevy's existing thread pool, and has also been looking into optimizing it for use cases such as ours. It remains to be seen what the best approach ends up being, but we are aiming to minimize the gaps between Avian's solver tasks where threads are not doing any work. This has the potential of *significantly* improving how well Avian scales for multi-core hardware.
+
+#### BVH Broad Phase
+
+For large scenes with thousands or *tens* of thousands of colliders, after our [improvements](#performance-improvements) to the solver and sleeping systems, we are now most bottlenecked by our sweep-and-prune broad phase implementation. The algorithm is extremely simple, and does a lot of unnecessary work even for static bodies. In a completely static scene where nothing is happening but there are a lot of colliders, the overhead can still be significant.
+
+For the next release, I am looking to replace our broad phase with a dynamic BVH using the [OBVHS](https://github.com/DGriffin91/obvhs) crate by @DGriffin91. This was also a goal in the [previous release post](https://joonaa.dev/blog/08/avian-0-3), but I am hoping to finally get it over the line soon.
+
+### Peck: Collision Detection for Bevy
+
+In the [Avian 0.3 release post]((https://joonaa.dev/blog/08/avian-0-3)), I already mentioned [Peck](https://joonaa.dev/blog/08/avian-0-3#peck), a Bevy-native collision detection library that I have been working on. You may remember this demo using Peck for contacts:
+
+<video controls>
+  <source src="/blog-assets/avian-0-3/peck_contacts_2d.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+For the 0.4 release cycle, I prioritized working on Avian's performance and joint APIs due to user demands, but I intend to focus more on Peck during the next cycle.
+
+Some things I would like to research and implement for Peck during the next cycle include:
+
+- Integrate @atlv24's GJK and EPA implementations
+- Experiment with supporting full affine transformations, including non-uniform scaling
+- Finish the analytic ray casting and point query implementations for Bevy's shapes
+- Implement shape casting, and other missing geometric queries (mostly just using GJK)
+- Implement convex polygons and polyhedra, with efficient and robust contact manifold computation
+- Implement convex decomposition (see [CoACD](#coacd-fast-and-accurate-convex-decomposition) in the next section)
+- Experiment with a collider type that can be used with Bevy and its asset system
+- Experiment with asset preprocessing to pre-generate colliders for scenes and mesh assets
+
+In short, I want to make it an actually usable collision detection library that people can integrate into their own projects, and experiment with it to try and address some of the big open design questions. It will not have feature-parity with [Parry](https://parry.rs/) yet, but it should have all the foundational pieces needed by most games.
+
+Additionally, I want to finally make Peck open source and available to the public, even if it is experimental for now. The people deserve Bevy-native collision detection!
+
+### CoACD: Fast and Accurate Convex Decomposition
+
+Typical collision detection algorithms work best with convex shapes. Because of this, games commonly either use convex hulls or break up meshes into several convex parts for collision geometry, depending on whether concavity needs to be accounted for.
+
+Historically, this has often been a manual process, but automatic tools via convex decomposition algorithms have become increasingly popular in modern engines. Avian already supports this via the [V-HACD](https://github.com/Unity-Technologies/VHACD) algorithm implemented in [Parry](https://parry.rs/), but for Peck and Bevy, we want something that is not tied to Parry (or *any* collision library).
+
+One option would be to simply extract Parry's V-HACD algorithm into a separate crate, and make it use Glam, or be math-agnostic. And we might still do that! However, I am currently more interested in [CoACD: *Approximate Convex Decomposition for 3D Meshes with Collision-Aware Concavity and Tree Search*](https://colin97.github.io/CoACD/). It tends to produce higher quality decompositions that preserve mesh features better, with similar performance as V-HACD.
+
+<img alt="CoACD comparison with existing works" src="https://colin97.github.io/CoACD/static/images/comparison.png" style="background-color: white; padding: 1rem; box-sizing: border-box;" />
+
+*An image from the [CoACD paper](https://colin97.github.io/CoACD/) comparing CoACD ("Ours") with existing methods.*
+
+I have already started porting CoACD to Rust! Right now, I have implemented just the mesh cutting algorithm, which is rather cool by itself:
+
+<video controls>
+  <source src="/blog-assets/avian-0-4/mesh_cutting.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+Remaining work includes things like the concavity calculation, a Monte Carlo tree search for finding optimal cutting planes, and component merging. Hopefully I can get these working soon enough!
+
+<Callout variant="tip" title="NavACD">
+    Another interesting convex decomposition algorithm that I've found is [NavACD: *Navigation-Driven Approximate Convex Decomposition*](https://jimmylands.com/projects/NavigationDrivenApproximateConvexDecomposition.pdf). It has been integrated into Unreal Engine, and was apparently used for LEGO® Fortnite. However, the code is likely not permissively licensed, and requires access to Unreal Engine's source, so I don't have plans to port it or use it any time soon.
+</Callout>
+
+### New Joint Solver
+
+For [several](http://joonaa.dev/blog/06/avian-0-1#whats-next) consecutive [releases](http://joonaa.dev/blog/07/avian-0-2#whats-next) in [a row](http://joonaa.dev/blog/08/avian-0-3#joint-rework),
+we have been meaning to rework joint APIs, change XPBD to another joint solver, and implement missing features such as joint motors.
+**Avian 0.4** [finally addressed](#joint-api-improvements) some of these with the addition of joint frames and various other improvements,
+but the new joint solver remains unfinished, and motors are still missing.
+
+A partial reason for this is that amidst me working on an impulse-based joint solver, [AVBD (*Augmented Vertex Block Descent*)](https://graphics.cs.utah.edu/research/projects/avbd/) was published,
+catching seemingly the whole physics community's attention.
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/bwJgifqvd5M" title="AVBD showcase" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen class="yt-video"></iframe>
+
+I had a basic 2D version implemented within just a few days (but had people informing me about it for *weeks* haha),
+to test out how well it works in practice. In short, my first impressions were unfortunately a bit of a mixed bag.
+
+**Pros**:
+
+- AVBD does handle both high mass ratios and high stiffness ratios quite well, as advertised.
+- The vertex coloring in AVBD provides superior parallelism compared to the typical edge coloring used by dual solvers. Great for GPU physics!
+- Especially for joints, AVBD seems *really* impressive in my testing. Even complicated scenarios have very little stretching or high-frequency oscillation.
+
+**Cons**:
+
+- Despite what the AVBD paper likes to say, the parameters are really fiddly and scene-dependent. Tuning is required for good behavior.
+- The above can be somewhat mitigated using a post-stabilization step, but in my experience, this can make stability even worse.
+- The body solve order has a significant impact on results. Without shuffling the order, chains can exhibit clear visual artifacts that depend on the iteration count.
+- Using wide SIMD seems more difficult for the primal update than it is with dual solvers, which hurts CPU perf and single-threaded use. Game physics rarely runs on the GPU.
+- The soft constraint formulation of impulse-based constraints provide a frequency and damping ratio for tuning constraints, while AVBD just provides a mass-dependent stiffness `k`, which is more annoying for game designers.
+- Speculative collisions and joint limits seem more challenging with a position-based solver, though it's probably doable.
+- The Hessian math can get *seriously* complicated for many 3D joints, and is often fairly expensive unless you're willing to make approximations at the cost of some stability.
+- Regardless of tuning, for contact scenarios, I was struggling to get results that were even nearly as stable as our existing TGS_Soft (aka "soft step") solver.
+- *AVBD breaks Newton's third law.* When bodies A and B collide, the force applied to A is not necessarily equal or opposite to the force applied to B. It is generally close enough, but it just means that this is one fewer invariant you can rely on.
+
+*(To emphasize: these are just my own experiences from experimenting with AVBD for a few weeks, and even trying out the author's demos. Your mileage may vary!)*
+
+What AVBD accomplishes is extremely impressive, and there are certainly cases where it shines and is a great fit (ex: GPU physics).
+However, for general-purpose game physics on the CPU, I am not yet convinced it is the best fit. If some of the stability and tuning issues can be addressed,
+my view on this may change, but for now, I am still leaning towards a traditional impulse-based solver for Avian's joints.
+
+For cases where impulse-based joints struggle, such as high mass ratios, we could implement a reduced-coordinates multi-body joint solver
+such as [the one in Rapier](https://rapier.rs/docs/user_guides/bevy_plugin/joint_constraints). This is also the approach taken by engines
+like PhysX and Havok.
+
+I may still keep experimenting with AVBD though, and am interested to see how it develops!
+
+## Support Me
+
+While Avian will always be free and permissively licensed, developing and maintaining it takes a lot of time and effort.
+
+If you find my work valuable, consider [supporting me through GitHub Sponsors](https://github.com/sponsors/Jondolf). This is ultimately my hobby, but by supporting me you can help make it more sustainable.
+
+Thank you ❤️
