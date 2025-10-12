@@ -919,9 +919,35 @@ In the future, [when wide SIMD is used for the solver](#wide-simd), we will also
 If we wanted to, we could also further automate plot creation by generating them directly as .png or .svg files in the CLI tool,
 but for now, they must be authored manually.
 
-## Other Changes
+## Other Changes and Fixes
 
-- ...
+There are still many, many other changes and fixes that I didn't cover in detail in this post.
+Some notable ones include:
+
+- Add `Collider::convex_polyline` by @kirilllysenko in [#727](https://github.com/Jondolf/avian/pull/727)
+- Improve CI performance and caching by @janhohenheim in [#729](https://github.com/Jondolf/avian/pull/729), [#730](https://github.com/Jondolf/avian/pull/730), [#732](https://github.com/Jondolf/avian/pull/732), and [#736](https://github.com/Jondolf/avian/pull/736)
+- Optimize gyroscopic motion by @Jondolf in [#738](https://github.com/Jondolf/avian/pull/738)
+- Add `ColliderConstructor::Compound` by @Piefayth in [#758](https://github.com/Jondolf/avian/pull/758)
+- Rework `Position` and `Rotation` initialization by @Jondolf in [#760](https://github.com/Jondolf/avian/pull/760)
+- Fix `DistanceLimit::compute_correction()` signs by @MiniaczQ in [#766](https://github.com/Jondolf/avian/pull/766)
+- Upgrade to Rust 2024 edition by @Jondolf in [#774](https://github.com/Jondolf/avian/pull/774)
+- Use `SymmetricMat3` from `glam_matrix_extras` for angular inertia by @Jondolf in [#777](https://github.com/Jondolf/avian/pull/777)
+- Implement `Deref` and `IntoIterator` for `RigidBodyColliders` by @Jondolf in [#784](https://github.com/Jondolf/avian/pull/784)
+- Rework `SyncPlugin`, remove `PreparePlugin`, and improve scheduling by @Jondolf in [#785](https://github.com/Jondolf/avian/pull/785)
+- Fix colliders not working after removing `Disabled`/`ColliderDisabled` by @Jondolf in [#791](https://github.com/Jondolf/avian/pull/791)
+- Fix `Plane3d` colliders ignoring half size by @janhohenheim in [#795](https://github.com/Jondolf/avian/pull/795)
+- Add `tumbler` example by @Jondolf in [#796](https://github.com/Jondolf/avian/pull/796)
+- Contact pruning for 3D by @Jondolf in [#798](https://github.com/Jondolf/avian/pull/798)
+- Remove `rest_length` field from `DistanceJoint`. by @shanecelis in [#517](https://github.com/Jondolf/avian/pull/517)
+- Remove `count` from `RayHits` and `ShapeHits` by @Jondolf in [#808](https://github.com/Jondolf/avian/pull/808)
+- Add `ApplyPosToTransform` component @cBournhonesque in [#837](https://github.com/Jondolf/avian/pull/837)
+- Show debug gizmos for interpolated transforms by @janhohenheim in [#829](https://github.com/Jondolf/avian/pull/829)
+- Implement collider constructor ready events by @janhohenheim in [#830](https://github.com/Jondolf/avian/pull/830)
+- Disable mass property warning for collider constructors by @Jondolf in [#849](https://github.com/Jondolf/avian/pull/849)
+- Update collider scale when the shape changes, not just when the transform changes by @pcwalton in [#851](https://github.com/Jondolf/avian/pull/851)
+- Don't update the diagnostics UI if it isn't visible by @pcwalton in [#856](https://github.com/Jondolf/avian/pull/856)
+
+A more complete list of changes can be found on [GitHub](https://github.com/Jondolf/avian/releases/tag/v0.4.0).
 
 ## What's Next?
 
