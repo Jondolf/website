@@ -838,6 +838,19 @@ Your browser does not support the video tag.
 
 (the first load is a bit more costly here, and also included shader compilation, which is unrelated to Avian)
 
+## Collider Constructor Ready Events
+
+<ReleaseNoteMetadata authors={['janhohenheim']} prs={[830]} repo={AVIAN_URL} />
+
+There are cases where you may want to detect when a `ColliderConstructor` or `ColliderConstructorHierarchy` has finished generating its collider(s),
+for example to delay logic that depends on the colliders being present. Doing this is a bit of a hassle and requires querying for the `Collider`.
+
+**Avian 0.4** adds some new events that aim to make the workflow easier.
+
+- `ColliderConstructorReady` is triggered when a `ColliderConstructor` has *successfully* inserted a `Collider`.
+- `ColliderConstructorHierarchyReady` is triggered when a `ColliderConstructorHierarchy` has finished inserting all of its `Collider`s.
+  It makes no guarantees about whether collider generation was successful for each entity.
+
 ## Benchmarking CLI
 
 <ReleaseNoteMetadata authors={['Jondolf']} prs={[753]} repo={AVIAN_URL} />
