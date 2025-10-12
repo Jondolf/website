@@ -821,11 +821,11 @@ Additionally, each `ContactPoint` now exposes a `normal_speed` property for the 
 
 <ReleaseNoteMetadata authors={['janhohenheim']} prs={[743]} repo={AVIAN_URL} />
 
-Generating colliders from meshes using `ColliderConstructor` or `ColliderConstructorHierarchy` can be expensive, especially when using convex decomposition. Currently, each collider is generated separately, but in practice, scenes tend to use many instances of the same meshes. Generating the same collider separately for each mesh instance can result in a lot of unnecessary work.
+Generating colliders from meshes using `ColliderConstructor` or `ColliderConstructorHierarchy` can be expensive, especially when using convex decomposition. In past releases, each collider was always generated separately, but in practice, scenes tend to use many instances of the same meshes. Generating the same collider separately for each mesh instance can result in a lot of unnecessary work.
 
 **Avian 0.4** introduces caching for collider constructors. For each new mesh that needs a collider, the generated shape is added to a `ColliderCache` resource, and when a mesh with the same `AssetId` is encountered later, the shape is simply fetched from the cache rather than generating a new collider from scratch. This is enabled by default and requires no changes on the user's side.
 
-This can have a significant impact on scene loading times. Below, you can see how loading the [foxtrot](https://github.com/janhohenheim/foxtrot) scene used to take several seconds:
+This can have a significant impact on scene loading times. Below, you can see how loading the [Foxtrot](https://github.com/janhohenheim/foxtrot) scene used to take several seconds:
 
 <video controls>
   <source src="/blog-assets/avian-0-4/collider_constructors_before.mp4" type="video/mp4" />
