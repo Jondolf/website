@@ -1,7 +1,7 @@
 ---
 id: 9
 title: "Avian Physics 0.4"
-description: "Massive performance improvements, and better force and joint APIs"
+description: "Massive performance improvements, and overhauled forces and joints"
 createdAt: 2025-10-06
 tags:
   - "Physics"
@@ -33,10 +33,10 @@ Check out the [GitHub repository](https://github.com/Jondolf/avian) and the [int
     - **Graph coloring**: The constraint solver is now multi-threaded with graph coloring.
     - **Simulation islands**: Islands are used for a much improved sleeping and waking system, reducing overhead for large game worlds with many resting bodies.
 - **Force overhaul**: The force and impulse APIs have been redesigned from the ground up, providing a much more capable and intuitive interface.
-- **Joint API improvements**: Joints now support full reference frames (anchor + basis), and have new `JointDamping` and `JointForces` components.
-- **Contact API improvements**: Contact data now provides access to world-space points, normal speeds, and more accurate contact impulses.
+- **Joint improvements**: Joints now support full reference frames (anchor + basis), and have new `JointDamping` and `JointForces` components.
 - **Voxel colliders**: Avian now supports voxel colliders for efficient representation of Minecraft-like worlds and other volumetric data.
 - **Bevy 0.17 support**: Avian has been updated to the latest version of Bevy, and has changed its collision event types and system set naming to match.
+- **Contact API improvements**: Contact data now provides access to world-space points, normal speeds, and more accurate contact impulses.
 - **Benchmarking CLI**: Avian has a new CLI tool for benchmarking various scenes and profiling multi-threaded scaling.
 
 The migration guide and a more complete changelog can be found on [GitHub](https://github.com/Jondolf/avian/releases/tag/v0.4.0).
@@ -401,11 +401,16 @@ Expect more improvements in the future!
 
 <ReleaseNoteMetadata authors={['Jondolf']} prs={[809]} repo={AVIAN_URL} />
 
-In the [previous section](#parallel-solver-with-graph-coloring), simulation islands were mentioned as one approach for solver parallelization. However, they also have another, arguably even more important function: sleeping and waking!
+In the [previous section](#parallel-solver-with-graph-coloring), simulation islands were mentioned as one approach for solver parallelization.
+However, they also have another, arguably even more important function: sleeping and waking!
 
-Sleeping is a low-cost state for resting dynamic bodies, and it is crucial for reducing CPU overhead for large game worlds. Up until now, Avian has used basic per-body sleeping that only allows sleeping for dynamic bodies that are not in contact with each other and not connected via joints. This means that object piles and joints are never allowed to sleep.
+Sleeping is a low-cost state for resting dynamic bodies, and it is crucial for reducing CPU overhead for large game worlds.
+Up until now, Avian has used basic per-body sleeping that only allows sleeping for dynamic bodies that are not in contact
+with each other and not connected via joints. This meant that object piles and joints were never allowed to sleep.
 
-The standard solution to this problem is [_simulation islands_](https://box2d.org/posts/2023/10/simulation-islands/). Bodies that are touching or connected by a joint belong to the same island, and can only sleep if the whole island can sleep. Conversely, if any dynamic body in an island is woken up, the whole island is woken up.
+The standard solution to this problem is [_simulation islands_](https://box2d.org/posts/2023/10/simulation-islands/).
+Bodies that are touching or connected by a joint belong to the same island, and can only sleep if the whole island can sleep.
+Conversely, if any dynamic body in an island is woken up, the whole island is woken up.
 
 <img alt="Simulation islands" src="/blog-assets/avian-0-4/simulation_islands.png" />
 
@@ -520,7 +525,7 @@ forces.non_waking().apply_force(force);
 forces.apply_force(force);
 ```
 
-## Joint API Improvements
+## Joint Improvements
 
 <ReleaseNoteMetadata authors={['Jondolf']} prs={[799, 803]} repo={AVIAN_URL} />
 
@@ -643,7 +648,7 @@ All XPBD logic is now gated behind an `xpbd_joints` feature, which means that (1
 <ReleaseNoteMetadata authors={['Jondolf']} prs={[761]} repo={AVIAN_URL} />
 
 [Parry](https://parry.rs/) version 0.20 introduced a new [`Voxels`](https://docs.rs/parry3d/0.25.0/parry3d/shape/struct.Voxels.html)
-shape for efficiently representing 3D volumes made of small uniform cubes, or *voxels*, commonly used for Minecraft-like terrain
+shape for efficiently representing 2D or 3D volumes made of small uniform cuboids, or *voxels*, commonly used for Minecraft-like terrain
 or other volumetric data. The `Voxels` shape can offer improved performance and robustness due to its uniform structure, and notably,
 it does not suffer from [ghost collisions](https://box2d.org/posts/2020/06/ghost-collisions/) caused by internal edges.
 
