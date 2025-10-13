@@ -2,7 +2,7 @@
 id: 9
 title: "Avian Physics 0.4"
 description: "Massive performance improvements, and overhauled forces and joints"
-createdAt: 2025-10-06
+createdAt: 2025-10-13
 tags:
   - "Physics"
   - "Simulation"
@@ -677,31 +677,8 @@ Voxel colliders can be created manually, or from a point cloud, or from a mesh. 
 
 Note that Parry's current voxel implementation has some limitations:
 
-- Collisions with composite shapes (ex: triangle meshes, compound shapes) are not yet supported.
-- Debug assertions can cause crashes in dev mode, see [parry#345](https://github.com/dimforge/parry/issues/345).
-
-## 3D Friction Stability Fix
-
-<ReleaseNoteMetadata authors={['Jondolf']} prs={[794]} repo={AVIAN_URL} />
-
-For a long time, Avian has had stability problems in 3D, especially with small shapes. Shapes with a small angular inertia drift and jitter on the ground even by themselves. A simple cube stack like the following with 10 cm cubes and the standard 9.81 m/s² gravity twists and just falls apart immediately.
-
-<video controls>
-  <source src="/blog-assets/avian-0-4/friction_before.mp4" type="video/mp4" />
-Your browser does not support the video tag.
-</video>
-
-As it turns out, this was a simple bug in the way tangent directions were computed for friction in the contact solver. In short, the "effective mass" for friction was computed using *old* tangents, but later substeps used *new* tangents while still using the original effective mass, which could produce wildly inaccurate impulses at low speeds where the tangents can change quickly. The fix was to instead just use the original tangents for the whole time step, not recomputing them each time.
-
-With this fixed, we get a *massive* stability improvement:
-
-<video controls>
-  <source src="/blog-assets/avian-0-4/friction_after.mp4" type="video/mp4" />
-Your browser does not support the video tag.
-</video>
-
-There is still a small wobble, but I believe this is largely due to the gravity being fairly high for such small objects, and 6 substeps isn't enough to keep it fully stable. With a lower gravity, it's perfectly stable.
-
+- Collisions against composite shapes (ex: triangle meshes) are not yet supported.
+- Debug assertions can sometimes cause crashes in debug mode, see [parry#345](https://github.com/dimforge/parry/issues/345).
 
 ## Bevy 0.17 Support
 
@@ -792,6 +769,28 @@ ColliderConstructorHierarchy::new(ColliderConstructor::ConvexDecompositionFromMe
     .with_density_for_name("armL_mesh.ferris_material", 3.0)
     .with_density_for_name("armR_mesh.ferris_material", 3.0)
 ```
+
+## 3D Friction Stability Fix
+
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[794]} repo={AVIAN_URL} />
+
+For a long time, Avian has had stability problems in 3D, especially with small shapes. Shapes with a small angular inertia drift and jitter on the ground even by themselves. A simple cube stack like the following with 10 cm cubes and the standard 9.81 m/s² gravity twists and just falls apart immediately.
+
+<video controls>
+  <source src="/blog-assets/avian-0-4/friction_before.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+As it turns out, this was a simple bug in the way tangent directions were computed for friction in the contact solver. In short, the "effective mass" for friction was computed using *old* tangents, but later substeps used *new* tangents while still using the original effective mass, which could produce wildly inaccurate impulses at low speeds where the tangents can change quickly. The fix was to instead just use the original tangents for the whole time step, not recomputing them each time.
+
+With this fixed, we get a *massive* stability improvement:
+
+<video controls>
+  <source src="/blog-assets/avian-0-4/friction_after.mp4" type="video/mp4" />
+Your browser does not support the video tag.
+</video>
+
+There is still a small wobble, but I believe this is largely due to the gravity being fairly high for such small objects, and 6 substeps isn't enough to keep it fully stable. With a lower gravity, it's perfectly stable.
 
 ## Contact API Improvements
 
