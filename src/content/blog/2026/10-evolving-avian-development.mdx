@@ -1,0 +1,118 @@
+---
+id: 10
+title: "Evolving Avian's Development"
+description: "New release and migration guide processes, a GitHub organization, and a development Discord server"
+createdAt: 2026-01-16
+tags:
+  - "FOSS"
+  - "Maintenance"
+thumbnail: "@assets/avian_logo.png"
+thumbnailOptimization: true
+---
+import ReleaseNoteMetadata from '@components/ReleaseNoteMetadata.astro';
+import Callout from "@components/Callout.astro"
+
+export const AVIAN_URL = 'https://github.com/avianphysics/avian';
+
+Heya! Joona here, the creator of [Avian Physics](https://github.com/avianphysics/avian). This post is a bit of a different one,
+outlining some recent changes to our development workflows and release process.
+
+In short, to make Avian's development more sustainable and community-driven, we have made the following changes:
+
+1. Avian now publishes dedicated [Bevy](https://bevy.org/) version updates. Feature releases with new functionality and breaking changes are done separately, whenever they are ready.
+2. Migration guides are now stored in the [Avian repository](https://github.com/avianphysics/avian/tree/main/migration-guides) as markdown files, and written as part of PRs that introduce breaking changes.
+3. Avian has moved under a new [Avian Physics](https://github.com/avianphysics) GitHub organization, allowing us to better provide permissions such as triage rights for select collaborators.
+4. Avian has a new [Avian Dev](https://discord.gg/khRnRwKDVs) Discord server for discussing the development of Avian and its ecosystem.
+
+I'll briefly go over these in more detail to explain rationale. Follow along if you're interested!
+
+## New Release Process
+
+Up until [Avian 0.4](/blog/09/avian-0-4), I have done one Avian release per Bevy release. They have all been massive updates,
+with tons of new and improved features and several breaking changes. Alongside this, I have always written
+a long-form announcement post with release notes, and a migration guide.
+
+This has made each release big and impressive, but it has also had some major problems:
+
+- Users that migrate to a new version of Bevy are forced to *also* handle the Avian release's own breaking changes at the same time.
+- When a new Bevy version is released, we often still have in-progress work that we would like to land first, delaying the release further.
+- The end of a release cycle is always very stressful and draining. I have to finish any critical in-progress work and fixes, write in-depth release notes and migration guides, prepare promotional material (ex: cover art and social media posts), and more, all with users asking for the release so that they can migrate to the latest Bevy version.
+
+Over the last couple of release cycles, it became clear to me that this is not sustainable,
+both for the ecosystem and my personal well-being. To solve this, I am going to be trying out a different approach:
+
+1. For each new Bevy release, we immediately publish an Avian release that migrates to it, *without* including any other changes on the main branch since the previous release.
+2. In the meanwhile, the main branch can freely evolve and develop. We cut a feature release *when it is ready*.
+
+This means that we effectively need to migrate Avian to new Bevy releases *twice*, once for the previous release,
+and once for the latest main branch. However, it lets us publish updates for Bevy releases as soon as they come out,
+and gives us the freedom to take as long as we need to for feature releases. I expect this to be much more sustainable
+and better for users.
+
+Avian 0.5 will be the first Bevy version update release, coming out tomorrow. A 0.6 release with new shiny features will come later,
+when it is ready, hopefully within a couple of weeks.
+
+Keep in mind that since this release process is new, it may still evolve as we try it out and see how it works in practice :)
+
+## New Migration Guide Process
+
+As implied in the previous section, our release cycles have historically had a *ton* of writing and release prep right at the end.
+A large chunk of this is writing migration guides.
+
+I have typically just copy-pasted migration guides from PRs that have breaking changes into a single document,
+but this still involves a lot of editorial work, making the guides coherent and ensuring that the information isn't outdated.
+It tends to take me at least a day or two depending on the size of the release, and can be draining when done for every release.
+
+Another problem has been that users sometimes want access to migration guides *before* the release is out.
+Several people use the main branch, which does not have any migration guides.
+
+To address these problems, we took inspiration from [Bevy's migration guide process](https://github.com/bevyengine/bevy/blob/main/release-content/migration_guides.md)
+and switched to storing migration guides in the Avian repository as markdown files. When a breaking PR is made,
+it is tagged with the `M-Migration-Guide` label, and the PR author is expected to draft a guide in e.g. `migration-guides/0.4-to-main`
+(replace 0.4 with the latest release). At the end of the release cycle, all that is needed is to do a brief editorial pass!
+
+We switched to this process in October, and it has worked quite nicely. Much less late-cycle work,
+and users always have up-to-date migration guides, even for the main branch :)
+
+For more information about the new migration guide proces, see [this document](https://github.com/avianphysics/avian/blob/main/migration-guides/README.md).
+
+## Avian Physics GitHub Organization
+
+Previously, the Avian repository was under my personal @Jondolf profile. However, Avian has grown enough
+that it's not just my project anymore. We should aim to give it a bit more of its own identity and open it up
+for wider collaboration, and one part of this is creating a new [Avian Physics](https://github.com/avianphysics) GitHub organization.
+
+In practice, not much is changing, other than:
+
+1. The URL is now https://github.com/avianphysics/avian.
+2. We can give select contributors permissions for triage! (labelling and closing issues and PRs, requesting reviews, editing milestones, and more)
+
+The second point is especially important, and the primary motivation for the new organization.
+If you'd like to join the org and help out with occasional triage (and ideally have some prior Avian or Bevy contributions),
+hit me up on Discord (`@jondolfdev`) or elsewhere!
+
+## Avian Dev Discord Server
+
+Avian work is tracked on GitHub, but the majority of development discussion and progress updates still happen on Discord.
+
+However, the [Bevy](https://discord.com/invite/bevy) server hasn't necessarily had a good place for this.
+There is an Avian forum topic in `#ecosystem-crates`, but this is primarily for user questions
+and general discussion about the project (and you can't create threads!). There's also a `#physics-dev` channel,
+but it is primarily for discussing "official" physics for Bevy.
+
+Ultimately, we decided that it's best to create our own space for this. Thus, the [Avian Dev](https://discord.gg/khRnRwKDVs)
+server was born! There, we can share updates for Avian and Peck, collaborate with others on features, or discuss any other work
+regarding the development of Avian and its ecosystem. Consider [joining](https://discord.gg/khRnRwKDVs) if you're interested!
+
+<Callout variant="note">
+    The new server is primarily just a place for Avian's "developer community" and contributors to get together
+    and discuss development work. User questions and the general community still exists primarily on the Bevy server, like before.
+</Callout>
+
+## Wrapping Up
+
+By adopting these changes to our workflows and project management, I'm hoping to make Avian's development a bit more sustainable
+and reduce the churn involved with each release. We'll see how it works out!
+
+As I mentioned earlier, Avian 0.5 should be coming out tomorrow, updating to Bevy 0.18. Like before,
+it'll have its own announcement post, though this time much shorter, as it only has the Bevy migration. See you then 😉
