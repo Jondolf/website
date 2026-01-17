@@ -1,0 +1,55 @@
+---
+id: 11
+title: "Avian Physics 0.5"
+description: "Bevy 0.18 support"
+createdAt: 2026-01-17
+tags:
+  - "Physics"
+  - "Simulation"
+  - "Rust"
+  - "Bevy"
+thumbnail: "@assets/avian_0_5.png"
+thumbnailOptimization: true
+---
+
+**Avian Physics 0.5** has been released! 🪶
+
+[**Avian**](https://github.com/avianphysics/avian) is an ECS-based 2D and 3D physics engine for [Bevy](https://bevyengine.org/),
+a refreshingly simple data-driven game engine built in Rust. Avian prioritizes ergonomics and modularity,
+with a focus on providing a native ECS-driven user experience.
+
+Check out the [GitHub repository](https://github.com/avianphysics/avian) and the [introductory post](https://joonaa.dev/blog/06/avian-0-1) for more details.
+
+## Bevy 0.18 Support
+
+**Avian 0.5** is just an update to [Bevy 0.18](https://bevy.org/news/bevy-0-18/), with no other breaking changes.
+See Bevy's own release notes for more details.
+
+This was the first release under our [new release process](/blog/10/evolving-avian-development),
+where we publish Bevy version updates separately from feature releases, to unblock users and third party crates
+that want to migrate to the latest Bevy release early.
+
+A separate **Avian 0.6** feature release with new functionality and improvements will be published
+*when it is ready*.
+
+## Plans for Avian 0.6
+
+Curious about what is coming in **Avian 0.6**? Here are some of the planned features and improvements:
+
+- **Move-and-slide**: The fundamental movement and collision algorithm for a Kinematic Character Controller (KCC).
+- **Broad phase BVH**: Much faster broad phase collision detection using [OBVHS](https://github.com/DGriffin91/obvhs), minimizing overhead for large scenes.
+- **Spatial query rework**: Much lower overhead for spatial queries, reusing the broad phase BVH, and supporting generic collider types.
+- **Joint motors**: Velocity and position motors for revolute and prismatic joints.
+- **Updated KCC examples**: Kinematic Character Controller examples using the new move-and-slide functionality.
+
+Keep in mind that these are still in development, so it is possible that not all of them make it into the 0.6 release.
+I will try to publish 0.6 in time for [Bevy Jam #7](https://itch.io/jam/bevy-jam-7), so if something is not ready by then,
+it may need to be cut. We'll see!
+
+## Support Me
+
+While Avian will always be free and permissively licensed, developing and maintaining it takes a lot of time and effort.
+
+If you find my work valuable, consider [supporting me through GitHub Sponsors](https://github.com/sponsors/Jondolf). This is ultimately my hobby, but by supporting me you can help make it more sustainable.
+
+Thank you ❤️
