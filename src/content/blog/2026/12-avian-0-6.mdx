@@ -1,0 +1,92 @@
+---
+id: 12
+title: "Avian Physics 0.6"
+description: "Move-and-slide, joint motors, and BVH optimization"
+createdAt: 2025-10-13
+tags:
+  - "Physics"
+  - "Simulation"
+  - "Rust"
+  - "Bevy"
+thumbnail: "@assets/avian_0_4.png"
+thumbnailOptimization: true
+---
+import ReleaseNoteMetadata from '@components/ReleaseNoteMetadata.astro';
+import Callout from "@components/Callout.astro"
+
+export const AVIAN_URL = 'https://github.com/Jondolf/avian';
+
+**Avian Physics 0.6** has been released! 🪶
+
+[**Avian**](https://github.com/Jondolf/avian) is an ECS-based 2D and 3D physics engine for [Bevy](https://bevyengine.org/),
+a refreshingly simple data-driven game engine built in Rust. Avian prioritizes ergonomics and modularity,
+with a focus on providing a native ECS-driven user experience.
+
+Check out the [GitHub repository](https://github.com/Jondolf/avian) and the [introductory post](https://joonaa.dev/blog/06/avian-0-1) for more details.
+
+## Highlights
+
+**Avian 0.6** brings several major optimizations and features:
+
+- **Move-and-slide**: Avian now supports move-and-slide, the fundamental movement and collision algorithm used for a Kinematic Character Controller (KCC).
+- **Joint motors**: Revolute joints and prismatic joints now support motors with both velocity and position control.
+- **BVH broad phase**: Broad phase collision detection now uses [OBVHS](), massively improving performance for large scenes and static geometry.
+
+The migration guide and a more complete changelog can be found on [GitHub](https://github.com/Jondolf/avian/releases/tag/v0.6.0).
+
+## Move-and-Slide
+
+<ReleaseNoteMetadata authors={['janhohenheim', 'Jondolf', 'unpairedbracket', 'UndefinedBHVR']} prs={[894]} repo={AVIAN_URL} />
+
+For years(!) now, a very common pain point for users of Avian has been the lack of a Kinematic Character Controller (KCC).
+There have been some dynamic character controllers (`bevy_tnua`), and numerous scattered implementations from different people,
+but no concentrated effort on a built-in solution.
+
+This has been due to several factors:
+
+1. Character controllers are very game-specific and difficult to generalize
+2. Users can already build their own character controllers, no built-in integration is strictly necessary
+3. Other work for the core Avian has been a higher priority for me
+
+However, as Avian and its community has grown, it has became clearer that official character controller functionality
+is strongly desired. KCCs are integral to the majority of games, but notoriously difficult to get right.
+While we cannot cater to the needs of every character controller, we can and should support the most fundamental
+and commonly used features, to form a foundation to build your own opinionated KCC upon.
+
+<details>
+    <summary>Why not just use dynamic bodies?</summary>
+
+...
+</details>
+
+**Avian 0.6** takes the first steps towards official character controller support by implementing *move-and-slide* or *collide-and-slide*,
+the movement and collision algorithm at the heart of most KCCs. 
+
+### Usage
+
+### Implementation
+
+### Showcase: `bevy_ahoy`
+
+Authors: @janhohenheim, @atlv24
+
+### A Community Effort
+
+### Future KCC Work
+
+## Other Changes and Fixes
+
+There are still many, many other changes and fixes that I didn't cover in detail in this post.
+Some notable ones include:
+
+-
+
+A more complete list of changes can be found on [GitHub](https://github.com/Jondolf/avian/releases/tag/v0.6.0).
+
+## Support Me
+
+While Avian will always be free and permissively licensed, developing and maintaining it takes a lot of time and effort.
+
+If you find my work valuable, consider [supporting me through GitHub Sponsors](https://github.com/sponsors/Jondolf). This is ultimately my hobby, but by supporting me you can help make it more sustainable.
+
+Thank you ❤️
