@@ -47,12 +47,21 @@
   .tag {
     display: inline;
     padding: 0.3em 0.45em;
-    font-size: 1.1em;
+    font-size: 0.825em;
     font-weight: bold;
     background: rgba(var(--accent-1-rgb), 10%);
     color: var(--accent-1);
     border-radius: 0.4rem;
     text-decoration: none;
-    font-family: monospace;
+    font-family: "Recursive", monospace;
+    font-optical-sizing: auto;
+    font-weight: 800;
+    font-style: normal;
+    font-variation-settings:
+      "slnt" 0,
+      "CASL" 0.5,
+      "CRSV" 0,
+      "MONO" 1;
+    font-feature-settings: "ss02" on;
   }
 </style>
