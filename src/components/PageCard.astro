@@ -7,303 +7,302 @@ import TimeLabel from "./TimeLabel.svelte";
 import { Image } from "astro:assets";
 
 interface Props {
-  page: CollectionEntry<"blog"> | CollectionEntry<"projects">;
+	page: CollectionEntry<"blog"> | CollectionEntry<"projects">;
 }
 
 const { page } = Astro.props;
 
 let description =
-  page.data.description ?? getDescriptionFromText(page.body, 160);
+	page.data.description ?? getDescriptionFromText(page.body, 160);
 let pageUrl = page.data.url || slugToRoute(page.slug, page.collection);
 ---
 
 <div class="card-container">
-  <div class="card">
-    <!-- This link is enlarged to fit the whole card using an absolutely positioned pseudo element. -->
-    <a
-      class="card-link"
-      href={pageUrl}
-      aria-label={`Read blog post titled: "${page.data.title}`}
-      >{page.data.title}</a
-    >
+	<div class="card">
+		<!-- This link is enlarged to fit the whole card using an absolutely positioned pseudo element. -->
+		<a
+			class="card-link"
+			href={pageUrl}
+			aria-label={`Read blog post titled: "${page.data.title}`}
+			>{page.data.title}</a
+		>
 
-    <div class="card-header">
-      <h2>
-        <a href={pageUrl}>{page.data.title}</a>
-      </h2>
+		<div class="card-header">
+			<h2>
+				<a href={pageUrl}>{page.data.title}</a>
+			</h2>
 
-      {
-        page.data.links && (
-          <ul class="links">
-            {page.data.links.map((link) => (
-              <li>
-                <a
-                  href={link.url}
-                  title={link.text || ""}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {link.img && <Image src={link.img} alt={link.imgAlt || ""} />}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )
-      }
-    </div>
+			{
+				page.data.links && (
+					<ul class="links">
+						{page.data.links.map((link) => (
+							<li>
+								<a
+									href={link.url}
+									title={link.text || ""}
+									target="_blank"
+									rel="noreferrer"
+								>
+									{link.img && <Image src={link.img} alt={link.imgAlt || ""} />}
+								</a>
+							</li>
+						))}
+					</ul>
+				)
+			}
+		</div>
 
-    <div class="card-body">
-      <div class="card-content">
-        <TimeLabel
-          className="created-at"
-          date={new Date(page.data.createdAt)}
-          yearFormat={"numeric"}
-          monthFormat={"short"}
-          dayFormat={"2-digit"}
-        />
+		<div class="card-body">
+			<div class="card-content">
+				<TimeLabel
+					className="created-at"
+					date={new Date(page.data.createdAt)}
+					yearFormat={"numeric"}
+					monthFormat={"short"}
+					dayFormat={"2-digit"}
+				/>
 
-        {
-          page.data.tags && (
-            <ul class="tags">
-              {page.data.tags.map((tag) => (
-                <li class="tags-item">
-                  <Tag name={tag} type={page.collection} client:load />
-                </li>
-              ))}
-            </ul>
-          )
-        }
+				{
+					page.data.tags && (
+						<ul class="tags">
+							{page.data.tags.map((tag) => (
+								<li class="tags-item">
+									<Tag name={tag} type={page.collection} client:load />
+								</li>
+							))}
+						</ul>
+					)
+				}
 
-        <div class="description">
-          <Markdown markdown={description} />
-        </div>
-      </div>
+				<div class="description">
+					<Markdown markdown={description} />
+				</div>
+			</div>
 
-      {
-        page.data.thumbnail && (
-          <a class="thumbnail" href={pageUrl} title={page.data.title}>
-            <figure>
-              {(page.data.thumbnailOptimization && (
-                <Image
-                  src={page.data.thumbnail}
-                  alt={page.data.thumbnailAlt || ""}
-                />
-              )) || (
-                <img
-                  src={page.data.thumbnail.src}
-                  alt={page.data.thumbnailAlt}
-                  width={page.data.thumbnail.width}
-                  height={page.data.thumbnail.height}
-                />
-              )}
-              <figcaption>{page.data.thumbnailAlt}</figcaption>
-            </figure>
-          </a>
-        )
-      }
-    </div>
-  </div>
+			{
+				page.data.thumbnail && (
+					<a class="thumbnail" href={pageUrl} title={page.data.title}>
+						<figure>
+							{(page.data.thumbnailOptimization && (
+								<Image
+									src={page.data.thumbnail}
+									alt={page.data.thumbnailAlt || ""}
+								/>
+							)) || (
+								<img
+									src={page.data.thumbnail.src}
+									alt={page.data.thumbnailAlt}
+									width={page.data.thumbnail.width}
+									height={page.data.thumbnail.height}
+								/>
+							)}
+						</figure>
+					</a>
+				)
+			}
+		</div>
+	</div>
 </div>
 
 <style lang="scss">
-  $borderRadius: 0.6rem;
+	$borderRadius: 0.6rem;
 
-  .card-container {
-    position: relative;
-    color: var(--text-color-1);
-  }
+	.card-container {
+		position: relative;
+		color: var(--text-color-1);
+	}
 
-  .card-container a {
-    display: block;
-    color: var(--text-color-1);
-    text-decoration: none;
+	.card-container a {
+		display: block;
+		color: var(--text-color-1);
+		text-decoration: none;
 
-    &.card-link {
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      z-index: 0;
-      color: transparent;
-      user-select: none;
-    }
-  }
+		&.card-link {
+			position: absolute;
+			top: 0;
+			right: 0;
+			bottom: 0;
+			left: 0;
+			z-index: 0;
+			color: transparent;
+			user-select: none;
+		}
+	}
 
-  :global(.created-at) {
-    color: var(--text-color-2);
-  }
+	:global(.created-at) {
+		color: var(--text-color-2);
+	}
 
-  .card {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: 100%;
-    box-sizing: border-box;
-    background-color: var(--bg-2);
-    border-radius: $borderRadius;
-    transition: box-shadow 200ms;
-    padding: 1rem;
+	.card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		width: 100%;
+		box-sizing: border-box;
+		background-color: var(--bg-2);
+		border-radius: $borderRadius;
+		transition: box-shadow 200ms;
+		padding: 1rem;
 
-    &:hover {
-      box-shadow: 0 0 1rem rgb(var(--accent-1-rgb), 0.25);
-    }
-  }
+		&:hover {
+			box-shadow: 0 0 1rem rgb(var(--accent-1-rgb), 0.25);
+		}
+	}
 
-  .card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+	.card-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
 
-    h2 {
-      margin: 0;
-      padding: 0;
-      font-size: 1.3rem;
-    }
+		h2 {
+			margin: 0;
+			padding: 0;
+			font-size: 1.3rem;
+		}
 
-    .links {
-      display: flex;
-      gap: 1rem;
-      list-style: none;
-      padding: 0;
-      margin: 0;
+		.links {
+			display: flex;
+			gap: 1rem;
+			list-style: none;
+			padding: 0;
+			margin: 0;
 
-      a {
-        z-index: 1;
-        position: relative;
-        display: flex;
-        flex-direction: row-reverse;
-        align-items: center;
-        gap: 0.5rem;
-      }
+			a {
+				z-index: 1;
+				position: relative;
+				display: flex;
+				flex-direction: row-reverse;
+				align-items: center;
+				gap: 0.5rem;
+			}
 
-      :global(img) {
-        display: block;
-        width: 2rem;
-        height: 2rem;
-      }
-    }
-  }
+			:global(img) {
+				display: block;
+				width: 2rem;
+				height: 2rem;
+			}
+		}
+	}
 
-  .card-body {
-    flex: 1;
-    display: flex;
-    gap: 1rem;
-  }
+	.card-body {
+		flex: 1;
+		display: flex;
+		gap: 1rem;
+	}
 
-  .card-content {
-    flex: 1;
-    text-decoration: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    transition: box-shadow 200ms;
+	.card-content {
+		flex: 1;
+		text-decoration: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		transition: box-shadow 200ms;
 
-    div.description {
-      margin: 0;
-      box-sizing: border-box;
-    }
-  }
+		div.description {
+			margin: 0;
+			box-sizing: border-box;
+		}
+	}
 
-  ul.tags {
-    display: flex;
-    padding: 0;
-    margin: 0.25rem 0;
-    gap: 0.3rem 0.5rem;
-    flex-wrap: wrap;
+	ul.tags {
+		display: flex;
+		padding: 0;
+		margin: 0.25rem 0;
+		gap: 0.3rem 0.5rem;
+		flex-wrap: wrap;
 
-    li.tags-item {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      z-index: 1;
-    }
-  }
+		li.tags-item {
+			list-style: none;
+			padding: 0;
+			margin: 0;
+			z-index: 1;
+		}
+	}
 
-  div.description :global(:last-child) {
-    margin-bottom: 0;
-  }
+	div.description :global(:last-child) {
+		margin-bottom: 0;
+	}
 
-  div.description {
-    :global(*),
-    :global(.katex),
-    :global(.katex > .katex-html) {
-      display: inline;
-      font-size: 1em;
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
+	div.description {
+		:global(*),
+		:global(.katex),
+		:global(.katex > .katex-html) {
+			display: inline;
+			font-size: 1em;
+			list-style: none;
+			padding: 0;
+			margin: 0;
+		}
 
-    :global(h1)::before {
-      content: "# ";
-    }
+		:global(h1)::before {
+			content: "# ";
+		}
 
-    :global(h2)::before {
-      content: "## ";
-    }
+		:global(h2)::before {
+			content: "## ";
+		}
 
-    :global(h3)::before {
-      content: "### ";
-    }
+		:global(h3)::before {
+			content: "### ";
+		}
 
-    :global(li)::before {
-      content: "- ";
-    }
+		:global(li)::before {
+			content: "- ";
+		}
 
-    :global(img) {
-      display: none;
-    }
+		:global(img) {
+			display: none;
+		}
 
-    :global(a) {
-      z-index: 1;
-      position: relative;
-    }
-  }
+		:global(a) {
+			z-index: 1;
+			position: relative;
+		}
+	}
 
-  a.thumbnail {
-    max-width: calc(50%); // Half of the parent's size
-    height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    overflow: hidden;
-    border-radius: $borderRadius;
+	a.thumbnail {
+		max-width: calc(50%); // Half of the parent's size
+		height: 100%;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
+		border-radius: $borderRadius;
 
-    figure {
-      margin: 0;
-      padding: 0;
+		figure {
+			margin: 0;
+			padding: 0;
 
-      figcaption {
-        opacity: 0.8;
-        color: var(--text-color-2);
-      }
+			figcaption {
+				opacity: 0.8;
+				color: var(--text-color-2);
+			}
 
-      :global(img) {
-        width: auto;
-        height: auto;
-        max-width: 100%;
-        max-height: 16rem;
-        margin: 0 0 0.5rem 0;
-        padding: 0;
-        border-radius: $borderRadius;
-      }
-    }
-  }
+			:global(img) {
+				width: auto;
+				height: auto;
+				max-width: 100%;
+				max-height: 16rem;
+				margin: 0 0 0.5rem 0;
+				padding: 0;
+				border-radius: $borderRadius;
+			}
+		}
+	}
 
-  @media only screen and (max-width: 640px) {
-    .card-body {
-      flex-direction: column;
-    }
+	@media only screen and (max-width: 640px) {
+		.card-body {
+			flex-direction: column;
+		}
 
-    a.thumbnail {
-      max-width: 100%;
-      height: auto;
+		a.thumbnail {
+			max-width: 100%;
+			height: auto;
 
-      :global(img) {
-        max-width: 100%;
-        max-height: 16rem;
-      }
-    }
-  }
+			:global(img) {
+				max-width: 100%;
+				max-height: 16rem;
+			}
+		}
+	}
 </style>
