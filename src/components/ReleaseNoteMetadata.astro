@@ -3,47 +3,50 @@ import { Icon } from "astro-icon/components";
 import Markdown from "./Markdown.svelte";
 
 interface Props {
-  authors: string[];
-  prs: number[];
-  repo: string;
+	authors: string[];
+	prs?: number[];
+	repo: string;
 }
 
 const { authors, prs, repo } = Astro.props as Props;
 ---
 
 <div class="release-note-metadata">
-  <span
-    >Authors: {
-      authors.map((author, i) => (
-        <a href={`https://github.com/${author}`}>
-          @{author + (i < authors.length - 1 ? ", " : "")}
-        </a>
-      ))
-    }
-  </span>
-  <span
-    >PRs: {
-      prs.map((pr, i) => (
-        <a href={`${repo}/pull/${pr}`}>
-          #{pr + (i < prs.length - 1 ? ", " : "")}
-        </a>
-      ))
-    }
-  </span>
+	<span
+		>Authors: {
+			authors.map((author, i) => (
+				<a href={`https://github.com/${author}`}>
+					@{author + (i < authors.length - 1 ? ", " : "")}
+				</a>
+			))
+		}
+	</span>
+	{
+		prs && prs.length > 0 && (
+			<span>
+				PRs:{" "}
+				{prs.map((pr, i) => (
+					<a href={`${repo}/pull/${pr}`}>
+						#{pr + (i < prs.length - 1 ? ", " : "")}
+					</a>
+				))}
+			</span>
+		)
+	}
 </div>
 
 <style lang="scss">
-  .release-note-metadata {
-    margin-top: -0.5rem;
-    font-size: 0.9em;
-    color: gray;
+	.release-note-metadata {
+		margin-top: -0.5rem;
+		font-size: 0.9em;
+		color: gray;
 
-    a {
-      color: var(--text-color-2);
+		a {
+			color: var(--text-color-2);
 
-      &:hover {
-        color: var(--text-color-1);
-      }
-    }
-  }
+			&:hover {
+				color: var(--text-color-1);
+			}
+		}
+	}
 </style>
