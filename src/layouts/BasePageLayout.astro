@@ -77,19 +77,32 @@ const canonicalUrl =
 		<link rel="canonical" href={canonicalUrl} />
 
 		<title>{title}</title>
+
+		<!-- Primary meta tags -->
+		<meta name="title" content={title} />
 		<meta name="description" content={metaDescription} />
 		{
 			metaKeywords && (
 				<meta name="keywords" content={metaKeywords?.join(", ")} />
 			)
 		}
-		<meta property="og:url" content={canonicalUrl} />
+
+		<!-- Open Graph (Facebook) -->
 		<meta property="og:type" content="website" />
+		<meta property="og:url" content={canonicalUrl} />
 		<meta property="og:site_name" content="Joona Aalto" />
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={metaDescription} />
 		{metaImageSrc && <meta property="og:image" content={metaImageSrc} />}
 		{metaImageAlt && <meta property="og:image:alt" content={metaImageAlt} />}
+
+		<!-- X (Twitter) -->
+		<meta name="twitter:url" content={canonicalUrl} />
+		<meta name="twitter:title" content={title} />
+		<meta name="twitter:description" content={metaDescription} />
+		<meta name="twitter:card" content="summary_large_image" />
+		{metaImageSrc && <meta name="twitter:image" content={metaImageSrc} />}
+		{metaImageAlt && <meta name="twitter:image:alt" content={metaImageAlt} />}
 
 		<!-- Partytown and Google Analytics -->
 		<script
