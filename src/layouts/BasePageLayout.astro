@@ -303,6 +303,11 @@ const canonicalUrl =
         background-color: oklch(0.275 0.01 286) !important;
       }
 
+      ::selection {
+        background-color: rgba(var(--accent-1-rgb), 50%);
+        color: var(--text-color-1);
+      }
+
       @media only screen and (max-width: 1000px) {
         body {
           font-size: 0.9em;
