@@ -4,6 +4,8 @@ import SearchBar from "./SearchBar.svelte";
 import ThemeToggle from "./ThemeToggle.svelte";
 import { slugToRoute } from "../utils";
 import type { SearchEntry } from "../types";
+import { Image } from "astro:assets";
+import heartSymbol from "../assets/heart.svg";
 
 type Entry = CollectionEntry<"blog"> | CollectionEntry<"projects">;
 
@@ -11,178 +13,186 @@ const posts = await getCollection<"blog">("blog");
 const projects = await getCollection<"projects">("projects");
 const pages = [...posts, ...projects].sort(pageSortFn);
 const searchEntries: SearchEntry[] = [
-  ...pages.map((page) => ({
-    type: page.collection === "blog" ? "Blog" : "Project",
-    collection: page.collection,
-    title: page.data.title,
-    tags: page.data.tags,
-    href: getEntryHref(page),
-  })),
-  { type: "Page", title: "Home", href: "/" },
-  { type: "Page", title: "Blog", href: "/blog" },
-  { type: "Page", title: "Projects", href: "/projects" },
+	...pages.map((page) => ({
+		type: page.collection === "blog" ? "Blog" : "Project",
+		collection: page.collection,
+		title: page.data.title,
+		tags: page.data.tags,
+		href: getEntryHref(page),
+	})),
+	{ type: "Page", title: "Home", href: "/" },
+	{ type: "Page", title: "Blog", href: "/blog" },
+	{ type: "Page", title: "Projects", href: "/projects" },
 ];
 
 function pageSortFn(a: Entry, b: Entry) {
-  if (a.collection === "blog" && b.collection === "blog") {
-    return b.data.id - a.data.id;
-  } else {
-    return +b.data.createdAt - +a.data.createdAt;
-  }
+	if (a.collection === "blog" && b.collection === "blog") {
+		return b.data.id - a.data.id;
+	} else {
+		return +b.data.createdAt - +a.data.createdAt;
+	}
 }
 
 function getEntryHref(item: Entry) {
-  return (
-    item.data.url ||
-    slugToRoute(item.slug, item.collection) ||
-    window.location.href
-  );
+	return (
+		item.data.url ||
+		slugToRoute(item.slug, item.collection) ||
+		window.location.href
+	);
 }
 ---
 
 <nav>
-  <div class="title">
-    <a href="/">Joona Aalto</a>
-  </div>
+	<div class="title">
+		<a href="/">Joona Aalto</a>
+	</div>
 
-  <div class="search-bar-container">
-    <SearchBar client:load entries={searchEntries} />
-  </div>
+	<div class="search-bar-container">
+		<SearchBar client:load entries={searchEntries} />
+	</div>
 
-  <ul>
-    <li>
-      <a href="/projects">Projects</a>
-    </li>
-    <li>
-      <a href="/blog">Blog</a>
-    </li>
-    <li>
-      <a href="https://github.com/sponsors/Jondolf" target="_blank">Support Me</a>
-    </li>
-  </ul>
+	<ul>
+		<li>
+			<a href="/projects">Projects</a>
+		</li>
+		<li>
+			<a href="/blog">Blog</a>
+		</li>
+		<li class="support-link">
+			<a href="https://github.com/sponsors/Jondolf" target="_blank">
+				<span>Support</span>
+				<Image
+					src={heartSymbol}
+					alt="Heart Symbol"
+					width="20"
+					height="20"
+					class="heart-icon"
+				/>
+			</a>
+		</li>
+	</ul>
 </nav>
 
 <style lang="scss">
-  nav {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    height: 4rem;
-    padding: 0 1.5rem;
-    box-sizing: border-box;
-    margin: auto;
-    background-color: rgba(var(--bg-1-rgb), 0.6);
-    backdrop-filter: blur(0.2rem);
-    -webkit-backdrop-filter: blur(0.2rem);
-    z-index: 10;
-  }
+	nav {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
+		height: 4rem;
+		padding: 0 1.5rem;
+		box-sizing: border-box;
+		margin: auto;
+		background-color: rgba(var(--bg-1-rgb), 0.6);
+		backdrop-filter: blur(0.2rem);
+		-webkit-backdrop-filter: blur(0.2rem);
+		z-index: 10;
+	}
 
-  .title {
-    display: block;
-    flex: 1;
+	.title {
+		display: block;
+		flex: 1;
 
-    a {
-      width: fit-content;
-      height: 3rem;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      position: relative;
-      color: var(--text-color-1);
-      text-decoration: none;
-      font-family: "Rubik";
-      font-weight: 600;
-      font-size: 1.2em;
-      white-space: nowrap;
-      transition: color 200ms ease;
+		a {
+			width: fit-content;
+			height: 3rem;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			position: relative;
+			color: var(--text-color-1);
+			text-decoration: none;
+			font-family: "Rubik";
+			font-weight: 600;
+			font-size: 1.2em;
+			white-space: nowrap;
+			transition: color 200ms ease;
 
-      &:hover {
-        color: var(--accent-1);
-      }
+			&:hover {
+				color: var(--accent-1);
+			}
+		}
+	}
 
-      &::before {
-        content: "";
-        position: absolute;
-        bottom: 0.4rem;
-        left: 50%;
-        transform: translate(-50%, 0);
-        width: 0;
-        height: 2px;
-        border-radius: 1px;
-        background: linear-gradient(45deg, var(--accent-1), var(--accent-2));
-        transition: width 200ms ease;
-      }
+	ul {
+		flex: 1;
+		display: flex;
+		justify-content: end;
+		align-items: center;
+		height: 100%;
+		gap: 1.5rem;
+		list-style: none;
+		margin: 0;
+		padding: 0;
 
-      &:hover::before {
-        width: 100%;
-      }
-    }
-  }
+		li {
+			display: flex;
+			align-items: center;
+			height: 3rem;
 
-  ul {
-    flex: 1;
-    display: flex;
-    justify-content: end;
-    align-items: center;
-    height: 100%;
-    gap: 1.5rem;
-    list-style: none;
-    margin: 0;
-    padding: 0;
+			a {
+				padding: 0.4rem 0;
+				position: relative;
+				color: var(--text-color-1);
+				text-decoration: none;
+				text-wrap: nowrap;
+				transition: color 200ms ease;
 
-    li a {
-      display: flex;
-      align-items: center;
-      text-decoration: none;
-      position: relative;
-      color: var(--text-color-1);
-      text-wrap: nowrap;
-      height: 3rem;
-      transition: color 200ms ease;
+				&:hover {
+					color: var(--accent-1);
+				}
+			}
+		}
+	}
 
-      &:hover {
-        color: var(--accent-1);
-      }
+	.search-bar-container {
+		width: 50rem;
+		padding: 0 1.5rem;
+		box-sizing: border-box;
+		display: flex;
+		justify-content: flex-end;
+	}
 
-      &::before {
-        content: "";
-        position: absolute;
-        bottom: 0.4rem;
-        left: 50%;
-        transform: translate(-50%, 0);
-        width: 0;
-        height: 2px;
-        border-radius: 1px;
-        background: linear-gradient(45deg, var(--accent-1), var(--accent-2));
-        transition: width 200ms ease;
-      }
+	ul li.support-link {
+		a {
+			padding: 0.4rem;
+			display: flex;
+			align-items: center;
+			gap: 0.4rem;
+			background-color: #954c72aa;
+			border-radius: 0.5rem;
+			transition:
+				color 200ms ease,
+				background-color 200ms ease;
 
-      &:hover::before {
-        width: 100%;
-      }
-    }
-  }
+			&:hover {
+				color: #ffeeee;
+				background-color: #954c72;
+			}
+		}
 
-  .search-bar-container {
-    width: 50rem;
-    padding: 0 1.5rem;
-    box-sizing: border-box;
-    display: flex;
-    justify-content: flex-end;
-  }
-  
-  @media only screen and (max-width: 640px) {
-    ul {
-      gap: 1rem;
-    }
+		.heart-icon {
+			color: white;
+		}
+	}
 
-    .search-bar-container{
-      padding: 0 1rem;
-    }
-  }
+	@media only screen and (max-width: 640px) {
+		ul {
+			gap: 1rem;
+		}
+
+		.search-bar-container {
+			padding: 0 1rem;
+		}
+	}
+
+	@media only screen and (max-width: 450px) {
+		.support-link a span {
+			display: none;
+		}
+	}
 </style>
