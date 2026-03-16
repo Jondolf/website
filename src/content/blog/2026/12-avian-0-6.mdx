@@ -58,7 +58,7 @@ The `kinematic_character_2d` and `kinematic_character_3d` examples have also bee
 Your browser does not support the video tag.
 </video>
 
-In addition to the core move-and-slide algorithm, **Avian 0.6** also provides some other related utilities:
+In addition to the core move-and-slide algorithm, **Avian 0.6** provides other related utilities:
 
 - Shape casts tailored for character movement using `MoveAndslide::cast_move`
 - Depenetration for recovering from initial overlap using `MoveAndSlide::depenetrate`
@@ -140,6 +140,12 @@ let MoveAndSlideOutput {
 );
 ```
 
+<Callout variant="warning" title="Contact Forces">
+    Note that the character will not apply any forces to the dynamic bodies that it touches during movement,
+    as it stops at the point of contact before there is any overlap. Basic contact forces could be implemented with a system
+    like the one shown [here](https://github.com/avianphysics/avian/blob/6c4eafe97db192b0e4339f4ea95b3a674ded7327/crates/avian3d/examples/kinematic_character_3d/plugin.rs#L456).
+</Callout>
+
 The output contains the new position and the projected velocity after sliding along obstacles.
 We can use these to update the character's transform and velocity:
 
@@ -149,11 +155,11 @@ transform.translation = position;
 lin_vel.0 = projected_velocity;
 ```
 
-If you wanted to keep the original velocity, you could skip updating it altogether.
+If you want to keep the original velocity, you can skip updating it altogether.
 
 However, there's one more problem. If the entity is a `RigidBody::Kinematic`, Avian will automatically
-move it according to its `LinearVelocity`. But in this case, we want to control the position manually
-using move-and-slide! To do this, we can add the `CustomPositionIntegration` component to the entity:
+move it according to its `LinearVelocity`. But in this case, we want to control the position using
+move-and-slide! To do this, we can add the `CustomPositionIntegration` component to the entity:
 
 ```rust
 commands.spawn((
@@ -169,9 +175,7 @@ commands.spawn((
 This essentially tells Avian "please don't apply the `LinearVelocity` automatically, I will handle it myself".
 
 And that's it! We now have a very simple kinematic character controller that moves according to its `LinearVelocity`
-and slides along obstacles. Note that the character will not apply any forces to dynamic bodies it touches during movement,
-as it stops at the point of contact before there is any overlap, but basic contact forces could be implemented with a system
-like the one shown [here](https://github.com/avianphysics/avian/blob/6c4eafe97db192b0e4339f4ea95b3a674ded7327/crates/avian3d/examples/kinematic_character_3d/plugin.rs#L456).
+and slides along obstacles.
 
 ### Implementation
 
@@ -198,7 +202,7 @@ Your browser does not support the video tag.
 </video>
 
 This is not just Rapier either! I have seen similar issues in many other implementations and our own early prototypes.
-For a built-in solution in Avian though, I was insistent on something that is as robust as possible out of the box.
+For a built-in solution in Avian however, I was insistent on something that is as robust as possible out of the box.
 
 The algorithm that we eventually landed on looks like this:
 
@@ -263,7 +267,7 @@ That's all there is to it!
 
 #### Collecting Contact Planes
 
-When we sweep the shape along the desired velocity vector, we only get information about
+When we sweep the shape along the desired velocity vector, we only obtain information about
 the first collision that is encountered. However, there may be multiple obstacles in close proximity,
 and we need to consider all of them to compute a proper sliding velocity.
 
@@ -534,7 +538,7 @@ and related utilities in place, we still need actual component-driven APIs for t
 
 Some planned features for built-in character controller support in Avian include:
 
-- `CharacterBody` or `VirtualCharacter` component for creating a KCC with move-and-slide out of the box
+- `CharacterBody` or `VirtualCharacter` component for creating a KCC with move-and-slide
 - Ground detection
 - Slope handling
 - Stair stepping
@@ -548,6 +552,8 @@ Using these features, we can then add examples of more opinionated character con
 for different genres, including platformers, first-person shooters, top-down games, and more.
 
 ## Joint Motors
+
+<ReleaseNoteMetadata authors={['pierre-l']} prs={[913]} repo={AVIAN_URL} />
 
 A longstanding missing feature in Avian has been joint motors. They can be used to drive joints
 towards a target position or velocity, and are essential for character ragdolls, vehicles, and machinery,
@@ -652,7 +658,7 @@ and more for OBVHS to better suit our needs \<3
 
 **Avian 0.6** uses the [OBVHS](https://github.com/DGriffin91/obvhs) crate for its `Bvh2` type.
 This is wrapped by a `ColliderTree` type that also contains "collider proxies", which
-store lightweight information needed for broad phase collision detection (entity ID, AABB, layers, flags),
+store lightweight information needed for broad phase collision detection (entity IDs, layers, flags),
 indexed by the primitive index in the BVH.
 
 ```rust
@@ -660,7 +666,7 @@ pub struct ColliderTree {
     pub bvh: Bvh2,
     pub proxies: StableVec<ColliderTreeProxy>,
     // Used during tree optimization to determine which proxies
-    // need to be reinserted or which sub-trees need to be rebuilt
+    // need to be reinserted or which subtrees need to be rebuilt
     pub moved_proxies: Vec<ProxyId>,
     // A workspace for reusing allocations across tree operations
     pub workspace: ColliderTreeWorkspace,
@@ -722,12 +728,14 @@ over moved proxies, and finds any potential new contact pairs.
 
 ### Spatial Queries
 
+<ReleaseNoteMetadata authors={['Jondolf']} prs={[941]} repo={AVIAN_URL} />
+
 Spatial queries (ray casts, shape casts, overlap tests) now reuse the same BVH trees used by the broad phase.
 This significantly reduces overhead for scenes with a large number of colliders.
 
 <Callout variant="note" title="What Were We Using Before?">
     Previously, spatial queries instead used [Parry's][Parry] `Bvh`, but in a very inefficient way,
-    performing large allocations and full tree rebuilds every frame. We did not switch away
+    performing substantial allocations and full tree rebuilds every frame. We did not switch away
     from Parry's BVH because it was inherently slow (it's actually quite fast), but rather
     to decouple further from Parry and have more control.
 </Callout>
@@ -737,7 +745,7 @@ Right now, they only support the built-in `Collider`.
 
 ## Other Changes and Fixes
 
-There are still many, many other changes and fixes that I didn't cover in detail in this post.
+There are still many other changes and fixes that I didn't cover in detail in this post.
 Some notable ones include:
 
 - Split `RigidBodyForces` trait into `ReadRigidBodyForces` and `WriteRigidBodyForces` to allow immutable use of `Forces` by @Exotik850 in [#908](https://github.com/Jondolf/avian/pull/908)
@@ -788,7 +796,6 @@ For example, `dot` is implemented for every `GVec3<T>` where `T: Num`, and `leng
 (which requires a square root) is implemented for every `GVec3<T>` where `T: Real`:
 
 ```rust
-
 impl<T: Num> GVec3<T> {
     pub fn dot(self, rhs: Self) -> T {
         (self.x * rhs.x) + (self.y * rhs.y) + (self.z * rhs.z)
@@ -839,7 +846,7 @@ and the trait bounds were somewhat cumbersome to work with.
 As a result, I ended up making my own crate for generic numerics in Rust.
 It generalizes over both scalar types and wide SIMD with a single set of traits,
 meaning that if you write `T: Real`, the same code will work whether `T` is a `f32`, `f64`,
-`f32x4`, or `f64x8`. The API is almost a one-to-one match with Rust's built-in numeric types,
+`f32x4`, or `f64x8`. The API is nearly a one-to-one match with Rust's built-in numeric types,
 so you can do almost everything you can do with concrete number types, with code that looks very similar.
 
 The notable caveat is that by default, any branching or boolean logic will need to be written
@@ -908,7 +915,7 @@ fn ray_sphere_scalar<T: ScalarReal>(
 ```
 
 Both my generic numerics crate and generic `glam` crate will hopefully be made public in the near future,
-and they will likely have their own dedicated blog post. The major remaining work I have is supporting
+and they will likely get their own dedicated blog post. The major remaining work I have is supporting
 a SIMD backend that works on stable Rust with [`wide`], but I should have that working soon as well.
 
 [`glam_wide`]: https://github.com/Jondolf/glam_wide
@@ -1006,7 +1013,7 @@ to prove out the designs.
 Now that we have the core move-and-slide algorithm in place, we can start building more features
 and utilities for character controllers. As listed [before](#future-character-controller-work), this includes features like:
 
-- `CharacterBody` or `VirtualCharacter` component for creating a KCC with move-and-slide out of the box
+- `CharacterBody` or `VirtualCharacter` component for creating a KCC with move-and-slide
 - Ground detection
 - Slope handling
 - Stair stepping
@@ -1022,6 +1029,6 @@ for different genres, including platformers, first-person shooters, and top-down
 While Avian will always be free and permissively licensed, developing and maintaining it takes a lot of time and effort.
 
 If you find my work valuable, consider [supporting me through GitHub Sponsors](https://github.com/sponsors/Jondolf).
-This is ultimately my hobby, but by supporting me you can help make it more sustainable.
+This is ultimately my hobby, but by supporting me, you can help make it more sustainable.
 
 Thank you ❤️
