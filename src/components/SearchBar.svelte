@@ -172,6 +172,9 @@
 	>
 		<hr />
 		<ul
+			onpointerdown={(event) => {
+				event.preventDefault();
+			}}
 			style:height={smallLayout
 				? "100%"
 				: filteredItems.length > 0
