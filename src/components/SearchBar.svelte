@@ -25,7 +25,6 @@
 	let smallLayout = $derived(!windowWidth || windowWidth <= 640);
 
 	$effect(() => {
-		console.log(searchTerm, filteredItems);
 		if (mounted) {
 			if (searchOpen && smallLayout) {
 				document?.body.classList.add("search-modal-open");
@@ -88,8 +87,6 @@
 			selectedBottom -
 			searchBoxElement.clientHeight -
 			searchBarElement.offsetHeight;
-
-		console.log(selectedIndex);
 
 		// Scroll to make sure the selected item is visible
 		if (event.key === "ArrowUp") {
