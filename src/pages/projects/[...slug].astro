@@ -1,37 +1,43 @@
 ---
-import { getEntryBySlug } from 'astro:content';
-import BasePageLayout from '../../layouts/BasePageLayout.astro';
-import { getDescriptionFromText, localOrRemoteSrcToUrl, slugToRoute } from '../../utils';
+import { getEntry, render } from "astro:content";
+import BasePageLayout from "../../layouts/BasePageLayout.astro";
+import {
+	getDescriptionFromText,
+	localOrRemoteSrcToUrl,
+	slugToRoute,
+} from "../../utils";
 
 const { slug } = Astro.params;
-const project = await getEntryBySlug('projects', slug!);
+const project = await getEntry("projects", slug!);
 
 if (!project) {
-  return Astro.redirect('/projects/404?redirectedFrom=' + slug);
+	return Astro.redirect("/projects/404?redirectedFrom=" + slug);
 }
 
-const { Content } = await project.render();
+const { Content } = await render(project);
 const { title, description, tags, thumbnail, createdAt } = project.data;
 const currUrl = new URL(Astro.request.url);
-const imgSrc = thumbnail?.src ? localOrRemoteSrcToUrl(currUrl, thumbnail?.src).toString() : undefined;
+const imgSrc = thumbnail?.src
+	? localOrRemoteSrcToUrl(currUrl, thumbnail?.src).toString()
+	: undefined;
 ---
 
 <BasePageLayout
-  title={title + ' - Joona Aalto'}
-  metaDescription={description ?? getDescriptionFromText(project.body, 160)}
-  metaKeywords={tags}
-  metaImageSrc={imgSrc}
+	title={title + " - Joona Aalto"}
+	metaDescription={description ?? getDescriptionFromText(project.body, 160)}
+	metaKeywords={tags}
+	metaImageSrc={imgSrc}
 >
-  <article>
-    <h1>{title}</h1>
-    <span>{createdAt.toLocaleDateString()}</span>
-    <Content />
-  </article>
+	<article>
+		<h1>{title}</h1>
+		<span>{createdAt.toLocaleDateString()}</span>
+		<Content />
+	</article>
 </BasePageLayout>
 
 <style lang="scss">
-  article {
-    width: 50rem;
-    margin: auto;
-  }
+	article {
+		width: 50rem;
+		margin: auto;
+	}
 </style>

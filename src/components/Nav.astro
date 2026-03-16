@@ -1,7 +1,6 @@
 ---
 import { CollectionEntry, getCollection } from "astro:content";
 import SearchBar from "./SearchBar.svelte";
-import ThemeToggle from "./ThemeToggle.svelte";
 import { slugToRoute } from "../utils";
 import type { SearchEntry } from "../types";
 import { Image } from "astro:assets";
@@ -36,7 +35,7 @@ function pageSortFn(a: Entry, b: Entry) {
 function getEntryHref(item: Entry) {
 	return (
 		item.data.url ||
-		slugToRoute(item.slug, item.collection) ||
+		slugToRoute(item.id, item.collection) ||
 		window.location.href
 	);
 }

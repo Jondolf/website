@@ -14,7 +14,7 @@ const { page } = Astro.props;
 
 let description =
 	page.data.description ?? getDescriptionFromText(page.body, 160);
-let pageUrl = page.data.url || slugToRoute(page.slug, page.collection);
+let pageUrl = page.data.url || slugToRoute(page.id, page.collection);
 ---
 
 <div class="card-container">
