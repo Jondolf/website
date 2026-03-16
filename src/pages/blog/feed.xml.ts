@@ -15,7 +15,7 @@ export const GET: APIRoute = async ({ site }) => {
             title: entry.data.title,
             description: entry.data.description,
             pubDate: entry.data.createdAt,
-            link: slugToRoute(entry.slug, entry.collection),
+            link: slugToRoute(entry.id, entry.collection),
         })),
         customData: `<language>en-us</language>`,
     });

@@ -1,367 +1,372 @@
 ---
 import { Image } from "astro:assets";
-import { getCollection } from "astro:content";
+import { getCollection, render } from "astro:content";
 import Tag from "../../components/Tag.svelte";
 import TimeLabel from "../../components/TimeLabel.svelte";
 import BasePageLayout from "../../layouts/BasePageLayout.astro";
 import {
-  getDescriptionFromText,
-  localOrRemoteSrcToUrl,
-  slugToRoute,
+	getDescriptionFromText,
+	localOrRemoteSrcToUrl,
+	slugToRoute,
 } from "../../utils";
 import Markdown from "@components/Markdown.svelte";
 
 const { slug } = Astro.params;
 const posts = (await getCollection<"blog">("blog")).sort(
-  (a, b) => a.data.id - b.data.id
+	(a, b) => a.data.id - b.data.id,
 );
 const postIndex = posts.findIndex(
-  ({ data }) => data.id === +slug!.split("/")[0]
+	({ data }) => data.id === +slug!.split("/")[0],
 );
 const [prevPost, post, nextPost] = [
-  postIndex > 0 ? posts[postIndex - 1] : null,
-  posts[postIndex],
-  postIndex < posts.length - 1 ? posts[postIndex + 1] : null,
+	postIndex > 0 ? posts[postIndex - 1] : null,
+	posts[postIndex],
+	postIndex < posts.length - 1 ? posts[postIndex + 1] : null,
 ];
 if (!post) {
-  return Astro.redirect("/blog/404?redirectedFrom=" + slug);
+	return Astro.redirect("/blog/404?redirectedFrom=" + slug);
 }
 
 if (
-  post.slug.split("/")[1].slice(post.slug.split("/")[1].indexOf("-") + 1) !==
-  slug?.split("/")[1]
+	post.id.split("/")[1].slice(post.id.split("/")[1].indexOf("-") + 1) !==
+	slug?.split("/")[1]
 ) {
-  return Astro.redirect(slugToRoute(post?.slug, "blog"));
+	return Astro.redirect(slugToRoute(post?.id, "blog"));
 }
 
-const { Content, headings, remarkPluginFrontmatter } = await post.render();
+const { Content, headings, remarkPluginFrontmatter } = await render(post);
 const {
-  title,
-  description,
-  tags,
-  thumbnail,
-  thumbnailAlt,
-  thumbnailOptimization,
-  createdAt,
+	title,
+	description,
+	tags,
+	thumbnail,
+	thumbnailAlt,
+	thumbnailOptimization,
+	createdAt,
 } = post.data;
 const currUrl = new URL(Astro.request.url);
 const imgSrc = thumbnail?.src
-  ? localOrRemoteSrcToUrl(currUrl, thumbnail?.src).toString()
-  : undefined;
+	? localOrRemoteSrcToUrl(currUrl, thumbnail?.src).toString()
+	: undefined;
 ---
 
 <BasePageLayout
-  title={title + " - Joona Aalto"}
-  metaDescription={description ?? getDescriptionFromText(post.body, 160)}
-  metaKeywords={tags}
-  metaImageSrc={imgSrc}
-  metaImageAlt={thumbnailAlt}
+	title={title + " - Joona Aalto"}
+	metaDescription={description ?? getDescriptionFromText(post.body, 160)}
+	metaKeywords={tags}
+	metaImageSrc={imgSrc}
+	metaImageAlt={thumbnailAlt}
 >
-  {
-    headings.length > 0 && (
-      <div class="side-toc">
-        <span class="toc-title">Table of Contents</span>
-        <ul>
-          {headings.map((heading) => (
-            <li class={`toc-depth-${heading.depth}`}>
-              <a href={`${slugToRoute(post?.slug, "blog")}#${heading.slug}`}>
-                {heading.text}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </div>
-    )
-  }
+	{
+		headings.length > 0 && (
+			<div class="side-toc">
+				<span class="toc-title">Table of Contents</span>
+				<ul>
+					{headings.map((heading) => (
+						<li class={`toc-depth-${heading.depth}`}>
+							<a href={`${slugToRoute(post?.id, "blog")}#${heading.id}`}>
+								{heading.text}
+							</a>
+						</li>
+					))}
+				</ul>
+			</div>
+		)
+	}
 
-  <article class="blog-post">
-    <header>
-      <div class="date-and-reading-time">
-        <TimeLabel
-          className="created-date"
-          date={createdAt}
-          yearFormat={"numeric"}
-          monthFormat={"long"}
-          dayFormat={"numeric"}
-        />
+	<article class="blog-post">
+		<header>
+			<div class="date-and-reading-time">
+				<TimeLabel
+					className="created-date"
+					date={createdAt}
+					yearFormat={"numeric"}
+					monthFormat={"long"}
+					dayFormat={"numeric"}
+				/>
 
-        <span class="reading-time"
-          >{
-            remarkPluginFrontmatter.minutesRead >= 1
-              ? Math.ceil(remarkPluginFrontmatter.minutesRead) + " minute read"
-              : Math.round(remarkPluginFrontmatter.minutesRead * 60) +
-                " second read"
-          }</span
-        >
-      </div>
+				<span class="reading-time"
+					>{
+						remarkPluginFrontmatter.minutesRead >= 1
+							? Math.ceil(remarkPluginFrontmatter.minutesRead) + " minute read"
+							: Math.round(remarkPluginFrontmatter.minutesRead * 60) +
+								" second read"
+					}</span
+				>
+			</div>
 
-      <h1 class="title">{title}</h1>
+			<h1 class="title">{title}</h1>
 
-      {
-        description && (
-          <div class="description">
-            <Markdown markdown={description} />
-          </div>
-        )
-      }
+			{
+				description && (
+					<div class="description">
+						<Markdown markdown={description} />
+					</div>
+				)
+			}
 
-      {
-        tags && (
-          <ul class="tags">
-            {tags.map((tag) => (
-              <li class="tags-item">
-                <Tag name={tag} type="blog" client:load />
-              </li>
-            ))}
-          </ul>
-        )
-      }
+			{
+				tags && (
+					<ul class="tags">
+						{tags.map((tag) => (
+							<li class="tags-item">
+								<Tag name={tag} type="blog" client:load />
+							</li>
+						))}
+					</ul>
+				)
+			}
 
-      {
-        thumbnail && (
-          <figure class="thumbnail">
-            {(thumbnailOptimization && (
-              <Image
-                class="thumbnail-img"
-                src={thumbnail}
-                alt={thumbnailAlt || ""}
-              />
-            )) || (
-              <img
-                class="thumbnail-img"
-                src={thumbnail.src}
-                alt={thumbnailAlt}
-                width={thumbnail.width}
-                height={thumbnail.height}
-              />
-            )}
-            <figcaption>{thumbnailAlt}</figcaption>
-          </figure>
-        )
-      }
-    </header>
+			{
+				thumbnail && (
+					<figure class="thumbnail">
+						{(thumbnailOptimization && (
+							<Image
+								class="thumbnail-img"
+								src={thumbnail}
+								alt={thumbnailAlt || ""}
+							/>
+						)) || (
+							<img
+								class="thumbnail-img"
+								src={thumbnail.src}
+								alt={thumbnailAlt}
+								width={thumbnail.width}
+								height={thumbnail.height}
+							/>
+						)}
+						<figcaption>{thumbnailAlt}</figcaption>
+					</figure>
+				)
+			}
+		</header>
 
-    <main class="post-content">
-      <Content />
-    </main>
-  </article>
+		<main class="post-content">
+			<Content />
+		</main>
+	</article>
 
-  <div class="prev-and-next-posts">
-    {
-      prevPost && (
-        <a class="prev-post" href={slugToRoute(prevPost.slug, "blog")}>
-          <span>← Previous post</span>
-          {prevPost.data.title}
-        </a>
-      )
-    }
+	<div class="prev-and-next-posts">
+		{
+			prevPost && (
+				<a class="prev-post" href={slugToRoute(prevPost.id, "blog")}>
+					<span>← Previous post</span>
+					{prevPost.data.title}
+				</a>
+			)
+		}
 
-    {
-      nextPost && (
-        <a class="next-post" href={slugToRoute(nextPost.slug, "blog")}>
-          <span>Next post →</span>
-          {nextPost.data.title}
-        </a>
-      )
-    }
-  </div>
+		{
+			nextPost && (
+				<a class="next-post" href={slugToRoute(nextPost.id, "blog")}>
+					<span>Next post →</span>
+					{nextPost.data.title}
+				</a>
+			)
+		}
+	</div>
 </BasePageLayout>
 
 <style lang="scss" is:global>
-  $articleWidth: 50rem;
-  $tocItemLeftPadding: 0.5rem;
+	$articleWidth: 50rem;
+	$tocItemLeftPadding: 0.5rem;
 
-  .side-toc {
-    position: fixed;
-    top: 6rem;
-    right: 1.5rem;
-    bottom: 0;
-    left: calc((100vw - (100vw - $articleWidth) / 2 - $tocItemLeftPadding));
-    max-width: 25rem;
-    display: flex;
-    flex-direction: column;
+	.side-toc {
+		position: fixed;
+		top: 6rem;
+		right: 1.5rem;
+		bottom: 0;
+		left: calc((100vw - (100vw - $articleWidth) / 2 - $tocItemLeftPadding));
+		max-width: 25rem;
+		display: flex;
+		flex-direction: column;
 
-    .toc-title {
-      display: block;
-      margin-bottom: 0.5rem;
-      padding-left: $tocItemLeftPadding;
-      font-size: 1.1em;
-      font-weight: bold;
-      color: var(--text-color-2);
-    }
+		.toc-title {
+			display: block;
+			margin-bottom: 0.5rem;
+			padding-left: $tocItemLeftPadding;
+			font-family: "Rubik";
+			font-size: 1.1em;
+			font-weight: 550;
+			color: var(--text-color-2);
+		}
 
-    ul {
-      flex-grow: 1;
-      overflow: auto;
-      display: flex;
-      flex-direction: column;
-      padding: 0;
-      margin: 0;
-      list-style: none;
+		ul {
+			flex-grow: 1;
+			overflow: auto;
+			display: flex;
+			flex-direction: column;
+			padding: 0;
+			margin: 0;
+			list-style: none;
 
-      li {
-        padding-top: 0;
-        padding-bottom: 0;
-      }
+			li {
+				padding-top: 0;
+				padding-bottom: 0;
+			}
 
-      a {
-        text-decoration: none;
-        color: var(--text-color-2);
-        opacity: 0.6;
-        background-color: transparent;
-        display: block;
-        border-radius: 0.4rem;
-        padding: 0.2rem $tocItemLeftPadding;
-        transition: 100ms;
-        font-size: 0.9em;
+			a {
+				text-decoration: none;
+				color: var(--text-color-2);
+				opacity: 0.6;
+				background-color: transparent;
+				display: block;
+				border-radius: 0.4rem;
+				padding: 0.2rem $tocItemLeftPadding;
+				transition: 100ms;
+				font-size: 0.9em;
 
-        &:hover {
-          opacity: 1;
-          background-color: rgba(var(--text-color-2-rgb), 0.1);
-        }
-      }
+				&:hover {
+					opacity: 1;
+					background-color: rgba(var(--text-color-2-rgb), 0.1);
+				}
+			}
 
-      .toc-depth-1 {
-        font-weight: bold;
-      }
+			.toc-depth-1 {
+				font-weight: bold;
+			}
 
-      .toc-depth-3 {
-        padding-left: 1.5rem;
-      }
+			.toc-depth-3 {
+				padding-left: 1.5rem;
+			}
 
-      .toc-depth-4 {
-        padding-left: 3rem;
-      }
-    }
-  }
+			.toc-depth-4 {
+				padding-left: 3rem;
+			}
+		}
+	}
 
-  article.blog-post {
-    max-width: $articleWidth;
-    width: 100%;
-    padding: 0 1.5rem 1.5rem 1.5rem;
-    box-sizing: border-box;
-    margin: auto;
+	article.blog-post {
+		max-width: $articleWidth;
+		width: 100%;
+		padding: 0 1.5rem 1.5rem 1.5rem;
+		box-sizing: border-box;
+		margin: auto;
 
-    .date-and-reading-time {
-      padding-top: 2rem;
-      padding-bottom: 0.5rem;
-      display: flex;
-      gap: 1.5rem;
-      color: var(--text-color-2);
-    }
+		.date-and-reading-time {
+			padding-top: 2rem;
+			padding-bottom: 0.5rem;
+			display: flex;
+			gap: 1.5rem;
+			color: var(--text-color-2);
+		}
 
-    main > :last-child {
-      margin-bottom: 0;
-    }
+		main > :last-child {
+			margin-bottom: 0;
+		}
 
-    h1.title {
-      font-size: 2em;
-      margin: 0 0 0.5rem 0;
-    }
+		h1.title {
+			font-size: 2em;
+			margin: 0;
+		}
 
-    .thumbnail {
-      display: block;
-      width: 100%;
-      height: auto;
-      margin: 1rem 0;
-      border-radius: 0.9rem;
+		.thumbnail {
+			display: block;
+			width: 100%;
+			height: auto;
+			margin: 1rem 0;
+			border-radius: 0.9rem;
 
-      .thumbnail-img {
-        display: block;
-        width: 100%;
-        height: auto;
-        margin: 0 0 0.5rem 0;
-        border-radius: 0.9rem;
-      }
+			.thumbnail-img {
+				display: block;
+				width: 100%;
+				height: auto;
+				margin: 0 0 0.5rem 0;
+				border-radius: 0.9rem;
+			}
 
-      figcaption {
-        opacity: 0.8;
-        color: var(--text-color-2);
-      }
-    }
+			figcaption {
+				opacity: 0.8;
+				color: var(--text-color-2);
+			}
+		}
 
-    ul.tags {
-      display: flex;
-      padding: 0;
-      margin: 0.5rem 0;
-      gap: 2ch;
-      flex-wrap: wrap;
+		ul.tags {
+			display: flex;
+			padding: 0;
+			margin: 0.5rem 0;
+			gap: 2ch;
+			flex-wrap: wrap;
 
-      li.tags-item {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-      }
-    }
+			li.tags-item {
+				list-style: none;
+				padding: 0;
+				margin: 0;
+			}
+		}
 
-    .description {
-      font-size: 1.1em;
-      color: var(--text-color-2);
-      padding: 0;
-      margin: 0.5rem 0;
-    }
+		.description {
+			font-size: 1.1em;
+			color: var(--text-color-2);
+			padding: 0;
+			margin: 0.5rem 0;
 
-    blockquote {
-      margin-left: 0;
-      padding-left: 1rem;
-      color: var(--text-color-2);
-      border-left: 3px solid var(--accent-2);
+			p {
+				margin-top: 0.75em;
+			}
+		}
 
-      p:first-child {
-        margin-top: 0;
-      }
-    }
+		blockquote {
+			margin-left: 0;
+			padding-left: 1rem;
+			color: var(--text-color-2);
+			border-left: 3px solid var(--accent-2);
 
-    img {
-      display: block;
-      width: 100%;
-      border-radius: 0.5rem;
-    }
+			p:first-child {
+				margin-top: 0;
+			}
+		}
 
-    video,
-    .yt-video {
-      display: block;
-      width: 100%;
-      height: auto;
-      aspect-ratio: 16 / 9;
-      border-radius: 0.5rem;
-    }
-  }
+		img {
+			display: block;
+			width: 100%;
+			border-radius: 0.5rem;
+		}
 
-  .prev-and-next-posts {
-    max-width: $articleWidth;
-    width: 100%;
-    padding: 0 1.5rem 1.5rem 1.5rem;
-    box-sizing: border-box;
-    margin: auto;
-    display: flex;
-    gap: 1.5rem;
+		video,
+		.yt-video {
+			display: block;
+			width: 100%;
+			height: auto;
+			aspect-ratio: 16 / 9;
+			border-radius: 0.5rem;
+		}
+	}
 
-    a {
-      flex: 1;
-      display: block;
-      padding: 1rem;
-      border-radius: 0.6rem;
-      background-color: rgba(var(--bg-2-rgb), 1);
-      color: var(--text-color-2);
-      text-decoration: none;
+	.prev-and-next-posts {
+		max-width: $articleWidth;
+		width: 100%;
+		padding: 0 1.5rem 1.5rem 1.5rem;
+		box-sizing: border-box;
+		margin: auto;
+		display: flex;
+		gap: 1.5rem;
 
-      &:hover span {
-        color: var(--accent-1);
-      }
+		a {
+			flex: 1;
+			display: block;
+			padding: 1rem;
+			border-radius: 0.6rem;
+			background-color: rgba(var(--bg-2-rgb), 1);
+			color: var(--text-color-2);
+			text-decoration: none;
 
-      span {
-        display: block;
-        margin-bottom: 0.5rem;
-        font-weight: bold;
-        transition: color 200ms;
-      }
-    }
-  }
+			&:hover span {
+				color: var(--accent-1);
+			}
 
-  @media only screen and (max-width: 1300px) {
-    .side-toc {
-      display: none;
-    }
-  }
+			span {
+				display: block;
+				margin-bottom: 0.5rem;
+				font-weight: bold;
+				transition: color 200ms;
+			}
+		}
+	}
+
+	@media only screen and (max-width: 1300px) {
+		.side-toc {
+			display: none;
+		}
+	}
 </style>
