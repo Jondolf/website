@@ -1,0 +1,61 @@
+---
+id: 13
+title: "Avian Physics 0.7"
+description: "Bevy 0.19 support"
+createdAt: 2026-06-20
+tags:
+    - "Physics"
+    - "Simulation"
+    - "Rust"
+    - "Bevy"
+thumbnail: "@assets/avian_0_7.png"
+thumbnailOptimization: true
+---
+
+**Avian Physics 0.7** has been released! 🪶
+
+[**Avian**](https://github.com/avianphysics/avian) is an ECS-based 2D and 3D physics engine for [Bevy](https://bevyengine.org/),
+a refreshingly simple data-driven game engine built in Rust. Avian prioritizes ergonomics and modularity,
+with a focus on providing a native ECS-driven user experience.
+
+Check out the [GitHub repository](https://github.com/avianphysics/avian) and the [introductory post](https://joonaa.dev/blog/06/avian-0-1) for more details.
+
+## Bevy 0.19 Support
+
+**Avian 0.7** updates to [Bevy 0.19], which features Bevy's next generation scene system (BSN),
+rendering improvements, and much more. See Bevy's own [release notes][Bevy 0.19]
+and [migration guide][Bevy migration guide] for more details.
+
+[Bevy 0.19]: https://bevy.org/news/bevy-0-19/
+[Bevy migration guide]: https://bevy.org/learn/migration-guides/0-18-to-0-19/
+
+## Other Changes
+
+- More panic info for invalid rotations by @Ownezx in [#972](https://github.com/avianphysics/avian/pull/972)
+- Add `RayCaster::get(_global)_point` by @Shatur in [#971](https://github.com/avianphysics/avian/pull/971)
+- Make `SpatialQueryPlugin` configurable by @Shatur in [#970](https://github.com/avianphysics/avian/pull/970)
+- Add `Clone` to `MovedProxies` by @cBournhonesque in [#980](https://github.com/avianphysics/avian/pull/980)
+- Allow accessing entity from `intersections` callback by @PROMETHIA-27 in [#966](https://github.com/avianphysics/avian/pull/966)
+- Don't force all meshes visible on gizmo settings change by @eswartz in [#981](https://github.com/avianphysics/avian/pull/981)
+- Make 2D picking Z plane configurable by @Luracasmus in [#982](https://github.com/avianphysics/avian/pull/982)
+- Clone collider trees by @cscorley in [#988](https://github.com/avianphysics/avian/pull/988)
+- Fix RUSTSEC-2026-0173: Migrate from `proc-macro-error2` to `proc-macro-error3` by @gamma0987 in [#997](https://github.com/avianphysics/avian/pull/997)
+
+## Plans for Avian 0.8
+
+This was primarily just a Bevy version update with minimal breaking changes to ease migration.
+Here are some of the planned features and improvements for **Avian 0.8**:
+
+- **Overhauled CCD algorithm**: Faster, more robust, Box2D-inspired Continuous Collision Detection (CCD) algorithm that is much less prone to ghost collisions.
+- **Reflectable colliders**: Experimentation with a more general collider shape representation that is not tied to Parry and supports reflection.
+- **Performance improvements**: Contact recycling, more efficient friction, and multi-threading improvements.
+
+As always, these are still in development, and what ends up making it into the final release is subject to change.
+
+## Support Me
+
+While Avian will always be free and permissively licensed, developing and maintaining it takes a lot of time and effort.
+
+If you find my work valuable, consider [supporting me through GitHub Sponsors](https://github.com/sponsors/Jondolf). This is ultimately my hobby, but by supporting me you can help make it more sustainable.
+
+Thank you ❤️
