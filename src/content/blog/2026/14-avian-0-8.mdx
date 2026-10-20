@@ -1,0 +1,397 @@
+---
+id: 14
+title: "Avian Physics 0.8"
+description: "Faster CCD and contacts, overhauled double-precision support, large-scene optimization, and Bevy 0.20 support"
+createdAt: 2026-10-20
+tags:
+    - "Physics"
+    - "Simulation"
+    - "Rust"
+    - "Bevy"
+thumbnail: "@assets/avian_0_8.png"
+thumbnailOptimization: true
+---
+
+import ReleaseNoteMetadata from "@components/ReleaseNoteMetadata.astro";
+import Callout from "@components/Callout.astro";
+
+export const AVIAN_URL = "https://github.com/avianphysics/avian";
+
+**Avian Physics 0.8** has been released! 🪶
+
+[**Avian**](https://github.com/avianphysics/avian) is an ECS-based 2D and 3D physics engine for [Bevy](https://bevy.org/),
+a refreshingly simple data-driven game engine built in Rust. Avian prioritizes ergonomics and modularity,
+with a focus on providing a native ECS-driven user experience.
+
+Check out the [GitHub repository](https://github.com/avianphysics/avian) and the [introductory post](https://joonaa.dev/blog/06/avian-0-1) for more details.
+
+## Highlights
+
+**Avian 0.8** brings several major optimizations and improvements:
+
+- **Bevy 0.20 support**: Avian now supports [Bevy 0.20](https://bevy.org/news/bevy-0-20/)!
+- **CCD rework**: The continuous collision detection (CCD) algorithm has been reworked to be more robust and avoid ghost collisions at high speeds.
+- **Contact recycling**: Contacts are now recycled across timesteps, significantly improving collision detection performance.
+- **Double-precision overhaul**: The `f64` feature now only uses double-precision values for body positions and other world-space coordinates.
+- **Large-scene optimization**: Scenes with hundreds of thousands of bodies now have significantly less constant overhead and spawn up to an order of magnitude faster.
+- **Debug rendering for `SpatialQuery`**: Ray casts and other spatial queries performed via `SpatialQuery` can now be visualized with the debug renderer.
+
+The migration guide and a more complete changelog can be found on [GitHub](https://github.com/avianphysics/avian/releases/tag/v0.8.0).
+
+## Bevy 0.20
+
+<ReleaseNoteMetadata
+    authors={["andriyDev", "Jondolf"]}
+    prs={[1084]}
+    repo={AVIAN_URL}
+/>
+
+**Avian 0.8** supports [Bevy 0.20](https://bevy.org/news/bevy-0-20/),
+which features lots of improvements to its real-time pathtraced renderer Solari,
+BSN syntax changes, WESL shaders, and more. See Bevy's own [release notes](https://bevy.org/news/bevy-0-20/)
+and [migration guide](https://bevy.org/learn/migration-guides/0-19-to-0-20/) for more details.
+
+<a href="https://bevy.org/news/bevy-0-20/" target="_blank">
+    <img src="https://bevy.org/news/bevy-0-20/zorah.jpg" alt="Bevy 0.20" />
+</a>
+
+## CCD Rework
+
+<ReleaseNoteMetadata authors={["Jondolf"]} prs={[996]} repo={AVIAN_URL} />
+
+**Continuous Collision Detection (CCD)** is a technique used to prevent fast-moving objects
+from "tunneling" through other objects due to discrete time steps in the simulation.
+Common approaches include _speculative collision_ and either linear or non-linear _sweep-based CCD_.
+
+<div style="display: flex; flex-direction: row; gap: 4rem; align-items: center; justify-content: center">
+<img
+    alt="An object tunneling through a wall due to discrete timesteps"
+    src="/blog-assets/avian-0-1/discrete_collision_tunneling.png"
+    style="max-height: 20rem; width: auto; max-width: 100%"
+/>
+
+<img
+    alt="An object hitting a wall without tunneling thanks to sweep-based CCD"
+    src="/blog-assets/avian-0-1/ccd_sweep.png"
+    style="max-height: 20rem; width: auto; max-width: 100%"
+/>
+</div>
+
+Past versions of Avian relied heavily on [Bepu-style](https://github.com/bepu/bepuphysics2/blob/master/Documentation/ContinuousCollisionDetection.md)
+speculative collision with an unbounded speculative margin. This had two major problems:
+
+1. This style of speculative collision is very prone to ghost collisions.
+   Whenever an object moves past a surface at a high speed, you'll likely see it bump against the surface.
+2. Expanding all AABBs based on velocity leads to a lot of unnecessary contact pairs in the broad phase and narrow phase.
+   It also affects spatial queries since they reuse the same BVHs. This overhead can add up in scenes with a lot of dynamic bodies.
+
+**Avian 0.8** replaces this with a more robust CCD algorithm inspired by [Box2D](https://box2d.org).
+It is much less prone to ghost collisions, and allows bounding boxes to remain tight,
+with great performance.
+
+A high-level overview is that AABBs are now only expanded by a small, fixed speculative distance,
+and fast-moving dynamic objects use sweep-based CCD to avoid tunneling. Speculative collision
+with an unbounded margin is still supported, but it must be opted into.
+
+For extensive details on the new algorithm and differences to Box2D, please check out
+the [PR](https://github.com/avianphysics/avian/pull/996). In the following sections,
+we'll instead focus on the API changes and the final results.
+
+### Usage
+
+Swept CCD is now enabled _by default_ for fast-moving dynamic bodies, and can be configured using the `SweptCcd` component:
+
+```rust
+pub struct SweptCcd {
+    /// The types of bodies this body is swept against during CCD.
+    pub filter: CcdFilter,
+
+    /// The sweep mode used for this body (linear or non-linear).
+    pub mode: SweepMode,
+
+    /// The fraction of a body's minimum `ccd_thickness` it may travel
+    /// in a timestep before being treated as a fast-moving body.
+    pub threshold: Scalar,
+}
+```
+
+By default, CCD is performed against both static and kinematic bodies,
+and sweeps against other dynamic bodies can also be enabled by configuring the `filter`.
+Some other engines like Box2D instead only sweep against static bodies by default.
+
+The CCD "thickness" is effectively a shape-specific measure of its minimum size.
+For a sphere, this is simply its radius, and for a cuboid, it is the smallest half-extent.
+The `threshold` is then a fraction of this thickness, determining how much a point on the body
+may move in a timestep before it is treated as a fast-moving body.
+
+Additionally, Bepu-style speculative collision is still supported, but it is now opt-in via a `SpeculativeCcd` component:
+
+```rust
+pub struct SpeculativeCcd {
+    /// The maximum distance at which speculative contacts are generated for this body,
+    /// and the maximum distance its `ColliderAabb` is expanded along its velocity each timestep.
+    pub max_distance: Scalar,
+}
+```
+
+This can still be useful for some highly dynamic scenes where ghost collisions are not a problem,
+and can fill some gaps that swept CCD leaves. Notably, it helps with CCD _between_ two fast-moving bodies,
+and also reduces time-loss problems.
+
+### Results
+
+#### Tumbler
+
+This is the `tumbler` example (inspired by Box2D), modified to enable CCD between all the dynamic bodies,
+something that many other engines don't support. The green flashes are moments where CCD was active
+and the bodies were swept to the time of impact.
+
+<video controls>
+    <source src="/blog-assets/avian-0-8/tumbler.mp4" type="video/mp4" />
+    Your browser does not support the video tag.
+</video>
+
+(apologies for the compression artifacts and short video length)
+
+#### Spinners
+
+This is the `spinners` example, demonstrating the use of dynamic-dynamic CCD to make rapidly spinning objects hit small projectiles:
+
+<video controls>
+    <source src="/blog-assets/avian-0-8/spinners.mp4" type="video/mp4" />
+    Your browser does not support the video tag.
+</video>
+
+With non-linear sweeps, the spinners hit the projectiles reliably, unlike with linear sweeps or no swept CCD at all. However, they exhibit time loss, as they cannot complete the full rotational movement in order to prevent tunneling. By enabling speculative collision, this problem is alleviated, at the cost of its general problems (like ghost collisions).
+
+#### Projectile Bounce
+
+This is the `projectile_bounce` example, demonstrating how Avian supports two fast-moving projectiles hitting each other midair and bouncing off of each other:
+
+<video controls>
+    <source
+        src="/blog-assets/avian-0-8/projectile_bounce.mp4"
+        type="video/mp4"
+    />
+    Your browser does not support the video tag.
+</video>
+
+#### Speculative Ghost Collision Avoidance
+
+This is the `speculative_ghost` example taken from Box2D, demonstrating that moving right past an object at a high speed does not produce a ghost collision, as the speculative contact distance is kept very small by default:
+
+<video controls>
+    <source
+        src="/blog-assets/avian-0-8/speculative_ghost.mp4"
+        type="video/mp4"
+    />
+    Your browser does not support the video tag.
+</video>
+
+When the box hits the platform, you can also see swept CCD kicking in, as the box stops at the time of impact (green outline).
+
+## Contact Recycling
+
+<ReleaseNoteMetadata authors={["Jondolf"]} prs={[1033]} repo={AVIAN_URL} />
+
+One of the most expensive parts of a physics engine is computing contacts between objects.
+Games can often have piles of hundreds or even thousands of dynamic bodies,
+which can add up to tens of thousands of contacts.
+
+Sleeping helps when all of the bodies are at rest, but it is common for at least
+some of the bodies to be moving. Recomputing contacts for these relatively stationary
+bodies is wasteful!
+
+**Contact recycling** is a technique where contact points and normals are recycled across timesteps
+for shape pairs whose relative movement is small enough. This provides a _massive_
+performance gain for most collision-heavy scenes, and greatly improves stacking stability.
+
+With contact recycling, a 100 cube stack is easily stable with just 4 substeps:
+
+<img
+    alt="Performance comparison for a scene with 40,000 static colliders"
+    src="/blog-assets/avian-0-8/contact_recycling_stack.png"
+    style="width: auto; max-height: 40rem"
+/>
+
+Without contact recycling, even 40 substeps isn't enough unless other solver parameters are also tuned.
+
+The approach used by Avian is based on Erin Catto's algorithm for Box2D.
+Please check out his [Contact Recycling](https://box2d.org/posts/2026/10/contact-recycling/)
+blog post for details on the algorithm and its background.
+
+## Double-Precision Overhaul
+
+<ReleaseNoteMetadata authors={["Jondolf"]} prs={[1027]} repo={AVIAN_URL} />
+
+Previous versions of Avian had both an `f32` and `f64` feature.
+These switched the numeric types used by our internal type aliases like `Scalar` and `Vector`
+to the desired precision. When `f64` was enabled, almost _all_ APIs and internals switched
+to double-precision.
+
+This approach to double-precision was not ideal for several reasons:
+
+- Examples needed to use `Scalar` and `Vector` a lot, even though end users should typically not worry about them
+- Contributors (me included) regularly had CI errors due to `f32`/`f64` type mismatches
+- Using double-precision numbers everywhere in internals meaningfully affects performance
+- Upcoming SIMD optimizations are more effective when using single-precision numbers
+
+The primary reason for using double-precision in games is to avoid precision loss
+far from the origin, as it leads to quantised positions and wonky behavior like this:
+
+<video controls>
+    <source src="/blog-assets/avian-0-8/f32_large_world.mp4" type="video/mp4" />
+    Your browser does not support the video tag.
+</video>
+
+_`voxels_3d` at a distance of `1e7` units from the origin along the x-axis in single-precision._
+
+Other than that, using double-precision for game physics is largely just additional overhead and complexity.
+
+Thus, **Avian 0.8** overhauls the `f64` feature to only use double-precision for body positions
+and other world-space coordinates. This means that the vast majority of APIs and internals now always
+use single-precision, which improves performance and DX.
+
+The practical changes are:
+
+- The `f32` feature has been removed; it is used when `f64` is not enabled
+- The `f64` feature now only affects body positions and other world-space coordinates, the rest is always single-precision
+- Internal type aliases have also been renamed and cleaned up, for example `Scalar` -> `Real` and `Vector` -> `RVector`
+
+The earlier example works perfectly fine with the `f64` feature enabled, as expected:
+
+<video controls>
+    <source src="/blog-assets/avian-0-8/f64_large_world.mp4" type="video/mp4" />
+    Your browser does not support the video tag.
+</video>
+
+This new approach to double-precision was largely inspired by [Jolt](https://jrouwe.github.io/JoltPhysics/index.html#big-worlds).
+
+For more details, please check out the [PR](https://github.com/avianphysics/avian/pull/1027).
+
+## Large-Scene Optimization
+
+<ReleaseNoteMetadata
+    authors={["Jondolf", "DGriffin91"]}
+    prs={[1035, 1047, 1048, 1049, 1085]}
+    repo={AVIAN_URL}
+/>
+
+**Avian 0.8** includes several incremental improvements to reduce constant overhead
+for large scenes with hundreds of thousands or even millions of (static) bodies.
+
+The biggest improvement is much more efficient spawning and despawning of bodies.
+Previously, there was a problem that caused insertion and removal time to scale quadratically;
+while spawning a few hundred or thousand bodies was fast, spawning 200k bodies took up to _20 seconds_,
+and spawning a million bodies could take nearly _10 minutes_!
+
+This ended up being a simple fix, and spawning now scales linearly as expected:
+
+| bodies | v0.7    | v0.8    | perf  |
+| ------ | ------- | ------- | ----- |
+| 50k    | 1.39 s  | 0.149 s | 9.4x  |
+| 100k   | 5.09 s  | 0.306 s | 16.6x |
+| 200k   | 19.48 s | 0.634 s | 30.7x |
+| 1M     | -       | 3.7s    | -     |
+
+_(note: these numbers were measured for [#1049](https://github.com/avianphysics/avian/pull/1049), they may have improved further since then)_
+
+We also implemented a BVH insertion algorithm that is up to ~3.5x faster
+than the previous one, and produces much higher quality trees. This ended up being
+[upstreamed to OBVHS](https://github.com/DGriffin91/obvhs/pull/13); thanks to
+@DGriffin91 for the reviews and for working with me on this!
+
+## Debug Rendering for `SpatialQuery`
+
+<ReleaseNoteMetadata
+    authors={["justDeeevin", "Jondolf"]}
+    prs={[1061]}
+    repo={AVIAN_URL}
+/>
+
+In past versions of Avian, only the `RayCaster` and `ShapeCaster` components
+had built-in debug rendering support. If you wanted to visualize `SpatialQuery` results,
+you had to render them manually.
+
+**Avian 0.8** adds built-in debug rendering support for the following `SpatialQuery` methods:
+
+- `cast_ray`
+- `ray_hits`
+- `cast_shape`
+- `shape_hits`
+- `project_point`
+- `shape_intersections`
+
+The new `debug_render_spatial_query_3d` example demonstrates this for
+shape intersections, ray casts, shape casts, and point projections in 3D:
+
+<video controls>
+    <source
+        src="/blog-assets/avian-0-8/debug_render_spatial_query_3d.mp4"
+        type="video/mp4"
+    />
+    Your browser does not support the video tag.
+</video>
+
+All spatial query debug rendering can be configured or disabled via the `PhysicsGizmos` `GizmoConfigGroup`.
+
+## Other Changes and Fixes
+
+There are still many other changes and fixes that I didn't cover in detail in this post.
+Some notable ones include:
+
+- Rename collider context types by @Jondolf in [#1015](https://github.com/Jondolf/avian/pull/1015)
+- Fix rigid body and collider cloning by @Jondolf in [#1029](https://github.com/Jondolf/avian/pull/1029)
+- Decouple contacts and solver by @Jondolf in [#989](https://github.com/Jondolf/avian/pull/989)
+- Skip friction for solver bias stage by @Jondolf in [#1036](https://github.com/Jondolf/avian/pull/1036)
+- Contiguous solver bodies by @Jondolf in [#1037](https://github.com/Jondolf/avian/pull/1037)
+- Rework collider tree optimization and fix async task pool stall by @Jondolf in [#1048](https://github.com/Jondolf/avian/pull/1048)
+- Don't take ownership of the vertices and indices parameters in the `convex_decomposition` and `convex_hull` methods by @FredMarquer in [#944](https://github.com/Jondolf/avian/pull/944)
+- Fix stale proxy keys in the collider trees by @msvbg in [#1062](https://github.com/Jondolf/avian/pull/1062)
+- Fix angular momentum conservation for joint damping and damping being applied for kinematic bodies by @tysen in [#1078](https://github.com/Jondolf/avian/pull/1078)
+- Fix collision crash for bodies that used to have `RigidBodyDisabled` by @bytemunch in [#1068](https://github.com/Jondolf/avian/pull/1068)
+
+A more complete list of changes can be found on [GitHub](https://github.com/avianphysics/avian/releases/tag/v0.8.0).
+
+## What's Next?
+
+In the announcement for the previous feature release Avian 0.6,
+the [listed next priorities](https://joonaa.dev/blog/12/avian-0-6#whats-next) were:
+
+1. SIMD optimizations for the contact solver
+2. More progress on Peck, my WIP collision detection library
+3. Cleanup and polish (reorganizing modules, depending on sub-crates, refining APIs)
+4. More character controller features
+
+Although not much of these fully landed yet, significant progress was made on (1) and (3):
+
+- Released alpha versions of three math crates (official announcements coming soon-ish)
+    - [`gnum`]: Generic numerics similar to `num-traits`, but with SIMD and cross-platform determinism support built-in.
+    - [`gimd`]: `Simd<T, N>` and `Mask<T, N>` abstractions that work on both stable and nightly Rust, using `gnum`.
+    - [`gela`]: Linear algebra similar to `glam`, but with generic element types, both narrow and wide SIMD,
+      efficient cross-platform determinism, and more.
+- Opened [#958](https://github.com/Jondolf/avian/pull/958) to combine `LinearVelocity` and `AngularVelocity` into a single `Velocity` component
+- Opened [#1039](https://github.com/Jondolf/avian/pull/1039) to combine `Position` and `Rotation` into a single `PhysicsTransform` component
+- Opened [#1038](https://github.com/Jondolf/avian/pull/1038) to depend on `bevy_*` subcrates instead of `bevy`
+
+These remain as my current priorities, alongside more optimizations and API improvements.
+I am especially excited about the aforementioned math crates, as they have been a long time
+in the making, and will be extremely valuable for SIMD in Avian and other future projects.
+I will be making a separate announcement for these crates once they are ready for an official release.
+
+Speaking of future projects, I have also begun working on another major effort in the background.
+That one is not yet ready to be announced, but I am _very_ excited about it, and hope to have
+something I can share closer to the end of the year :)
+
+[`gnum`]: https://crates.io/crates/gnum
+[`gimd`]: https://crates.io/crates/gimd
+[`gela`]: https://crates.io/crates/gela
+
+## Support Me
+
+While Avian will always be free and permissively licensed, developing and maintaining it takes a lot of time and effort.
+
+If you find my work valuable, consider [supporting me through GitHub Sponsors](https://github.com/sponsors/Jondolf).
+This is ultimately my hobby, but by supporting me, you can help make it more sustainable.
+
+Thank you ❤️
